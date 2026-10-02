@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+@theme {
+  --color-paper: #F5F7F9;
+  --color-panel: #FFFFFF;
+  --color-ink: #15233F;
+  --color-ink-soft: #5A6478;
+  --color-line: #D8DEE6;
+  --color-exit: #00894B;
+  --color-amber: #E2A11B;
+  --color-signal: #D9482B;
+  --color-wine: #7A1F3D;
+  --color-quantum: #4B3FD1;
+  --color-quantum-soft: #ECEAFB;
+
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "IBM Plex Sans Condensed", "IBM Plex Sans", ui-sans-serif, sans-serif;
+}
+
+html {
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tabular figures for every number that sits in a column or changes value. */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-quantum);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* React Flow chrome, quieted to match the drafting paper look. */
+.react-flow__controls {
+  box-shadow: none;
+  border: 1px solid var(--color-line);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.react-flow__controls-button {
+  border-bottom-color: var(--color-line);
+}
+.react-flow__attribution {
+  background: transparent;
+  font-size: 9px;
+}

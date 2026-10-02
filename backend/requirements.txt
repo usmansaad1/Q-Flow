@@ -1,0 +1,23 @@
+# Core API
+fastapi==0.141.1
+uvicorn==0.52.4
+pydantic==2.13.5
+
+# Modelling and classical optimisation
+networkx==3.6.1
+numpy==2.5.3
+scipy==1.18.1
+ortools==9.15.6755
+
+# Experiment charts
+matplotlib>=3.10
+
+# Quantum (Step 2 onwards)
+qiskit==2.5.2
+qiskit-optimization==0.7.0
+qiskit-aer==0.17.2
+qiskit-ibm-runtime==0.49.0
+
+# Testing
+pytest
+httpx

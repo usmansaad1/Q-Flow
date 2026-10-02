@@ -1,0 +1,11 @@
+instance,method,n,prob_optimal,prob_optimal_std,prob_feasible,prob_feasible_std,mean_approx_ratio,mean_approx_ratio_std,runtime_s,runtime_s_std,two_qubit_gates,two_qubit_gates_std,random_prob_optimal,random_prob_optimal_std,random_mean_ratio,random_mean_ratio_std
+Micro Hall,Classical CP SAT,1,1.0,0.0,1.0,0.0,1.0,0.0,0.018395999999484047,0.0,,,,,,
+Small Event Hall,Classical CP SAT,1,1.0,0.0,1.0,0.0,1.0,0.0,0.06078079997678287,0.0,,,,,,
+Micro Hall,Classical exact,1,1.0,0.0,1.0,0.0,1.0,0.0,8.609998621977866e-05,0.0,,,,,,
+Small Event Hall,Classical exact,1,1.0,0.0,1.0,0.0,1.0,0.0,0.00011630001245066524,0.0,,,,,,
+Micro Hall,Naive (nearest exit),1,0.0,0.0,1.0,0.0,0.6489063148000889,0.0,3.4999975468963385e-06,0.0,,,,,,
+Small Event Hall,Naive (nearest exit),1,0.0,0.0,1.0,0.0,0.6264383792060668,0.0,6.099988240748644e-06,0.0,,,,,,
+Micro Hall,QAOA ideal,1,0.248046875,0.0,0.96044921875,0.0,0.654724735260257,0.0,0.5629050000279676,0.0,16,0.0,0.0625,0.0,0.16307952753456678,0.0
+Small Event Hall,QAOA ideal,1,0.13671875,0.0,0.9755859375,0.0,0.7265744289654468,0.0,0.8184310999931768,0.0,36,0.0,0.015625,0.0,0.09094859325758534,0.0
+Micro Hall,QAOA noisy x1,1,0.21728515625,0.0,0.8134765625,0.0,0.5577421775054318,0.0,0.5751435999991372,0.0,16,0.0,0.0625,0.0,0.16307952753456678,0.0
+Small Event Hall,QAOA noisy x1,1,0.09912109375,0.0,0.7197265625,0.0,0.5474797439797979,0.0,0.8435493999859318,0.0,36,0.0,0.015625,0.0,0.09094859325758534,0.0
