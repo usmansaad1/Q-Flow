@@ -34,6 +34,14 @@ export interface VenueDTO {
   crowd_groups: GroupDTO[];
 }
 
+export interface SavedVenueSummary {
+  id: number;
+  name: string;
+  updated_at: string;
+  num_qubits: number | null;
+  total_people: number;
+}
+
 export interface PresetInfo {
   id: string;
   name: string;
@@ -73,7 +81,8 @@ export interface Evaluation {
   resource_loads: Record<string, number>;
   utilisation: Record<string, number>;
   capacity_violations: number;
-  people_over_capacity: number;
+  people_over_capacity: number; // fewest people to remove so every route and exit fits
+  total_excess: number;         // excess summed over every route and exit
   max_utilisation: number;
   total_person_distance: number;
 }
@@ -138,6 +147,9 @@ export interface OptimizeResponse {
   result: SolverResultDTO;
   baseline: SolverResultDTO;
   quality: Quality | null;
+  /** Quantum only: the most common answer across all shots. */
+  typical?: (SolverResultDTO & { probability: number }) | null;
+  run_id?: number;
 }
 
 export type ExperimentKind = "scaling" | "noise" | "depth" | "versus";
@@ -180,4 +192,20 @@ export interface RunRow {
 
 export interface ExperimentDetail extends ExperimentInfo {
   runs: RunRow[];
+}
+
+export interface LabRunSummary {
+  id: number;
+  venue_name: string;
+  solver: string;
+  num_qubits: number;
+  quality: number | null;
+  created_at: string;
+}
+
+export interface LabRunDetail extends OptimizeResponse {
+  id: number;
+  venue: VenueDTO;
+  settings: ProblemSettings;
+  solver: string;
 }

@@ -2,7 +2,8 @@
 SQLite storage for experiments and runs (standard library only).
 
 Database location: backend/data/qflow.db, or the QFLOW_DB environment variable.
-One `experiments` row per experiment, one `runs` row per solver execution.
+One `experiments` row per experiment, one `runs` row per solver execution, and one
+`venues` row per venue saved from the Lab.
 Headline metrics get their own columns for easy querying; the full metrics
 dictionary is kept as JSON so nothing is lost.
 """
@@ -61,6 +62,22 @@ CREATE TABLE IF NOT EXISTS runs (
     created_at         TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_runs_experiment ON runs(experiment_id);
+CREATE TABLE IF NOT EXISTS lab_runs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    venue_name  TEXT NOT NULL,
+    solver      TEXT NOT NULL,
+    num_qubits  INTEGER,
+    quality     REAL,
+    data        TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS venues (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    data        TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
 """
 
 RUN_COLUMNS = [
@@ -152,3 +169,60 @@ class Storage:
                 d.pop("details", None)
             out.append(d)
         return out
+
+    # ----------------------------------------------------------------- venues
+    def save_venue(self, data: dict) -> int:
+        now = _now()
+        with self._conn() as c:
+            cur = c.execute("INSERT INTO venues (name, data, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                            (data["name"], json.dumps(data), now, now))
+            return int(cur.lastrowid)
+
+    def update_venue(self, venue_id: int, data: dict) -> bool:
+        with self._conn() as c:
+            cur = c.execute("UPDATE venues SET name = ?, data = ?, updated_at = ? WHERE id = ?",
+                            (data["name"], json.dumps(data), _now(), venue_id))
+            return cur.rowcount > 0
+
+    def get_venue(self, venue_id: int) -> dict | None:
+        with self._conn() as c:
+            row = c.execute("SELECT * FROM venues WHERE id = ?", (venue_id,)).fetchone()
+        if not row:
+            return None
+        return {**json.loads(row["data"]), "id": row["id"],
+                "created_at": row["created_at"], "updated_at": row["updated_at"]}
+
+    def list_venues(self) -> list[dict]:
+        with self._conn() as c:
+            rows = c.execute("SELECT * FROM venues ORDER BY updated_at DESC, id DESC").fetchall()
+        return [{**json.loads(r["data"]), "id": r["id"], "created_at": r["created_at"],
+                 "updated_at": r["updated_at"]} for r in rows]
+
+    def delete_venue(self, venue_id: int) -> bool:
+        with self._conn() as c:
+            return c.execute("DELETE FROM venues WHERE id = ?", (venue_id,)).rowcount > 0
+
+    # --------------------------------------------------------------- lab runs
+    def save_lab_run(self, venue_name: str, solver: str, num_qubits: int, quality: float | None, data: dict) -> int:
+        with self._conn() as c:
+            cur = c.execute("INSERT INTO lab_runs (venue_name, solver, num_qubits, quality, data, created_at) "
+                            "VALUES (?, ?, ?, ?, ?, ?)",
+                            (venue_name, solver, num_qubits, quality, json.dumps(data, default=float), _now()))
+            return int(cur.lastrowid)
+
+    def list_lab_runs(self, limit: int = 100) -> list[dict]:
+        with self._conn() as c:
+            rows = c.execute("SELECT id, venue_name, solver, num_qubits, quality, created_at FROM lab_runs "
+                             "ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_lab_run(self, run_id: int) -> dict | None:
+        with self._conn() as c:
+            row = c.execute("SELECT * FROM lab_runs WHERE id = ?", (run_id,)).fetchone()
+        if not row:
+            return None
+        return {**json.loads(row["data"]), "id": row["id"], "created_at": row["created_at"]}
+
+    def delete_lab_run(self, run_id: int) -> bool:
+        with self._conn() as c:
+            return c.execute("DELETE FROM lab_runs WHERE id = ?", (run_id,)).rowcount > 0

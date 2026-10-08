@@ -80,3 +80,7 @@ class ExperimentRequest(BaseModel):
     quick: bool = False
     # Optional overrides of the experiment's settings, e.g. {"sizes": [4, 6], "instances": 2}
     config: dict = Field(default_factory=dict)
+
+
+class VenueSaveRequest(BaseModel):
+    venue: VenueIn

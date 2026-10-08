@@ -7,16 +7,17 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from app.api.schemas import ExperimentRequest, OptimizeRequest, ProblemRequest
+from app.api.schemas import ExperimentRequest, OptimizeRequest, ProblemRequest, VenueSaveRequest
 from app.core.charts import export_experiment
 from app.core.experiments import CONFIGS, TITLES, quick_config, run_experiment
 from app.core.storage import Storage, results_dir
 from app.core.presets import PRESETS, get_preset
 from app.core.problem import RoutingProblem, Weights
+from app.core.solvers.base import SolverResult
 from app.core.solvers import CLASSICAL_SOLVERS, QUANTUM_SOLVERS, solve_exact, solve_naive
 from app.core.venue import Venue
 
-app = FastAPI(title="Q-Flow Optimisation Engine", version="0.4.0")
+app = FastAPI(title="Q-Flow Optimisation Engine", version="0.5.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -67,6 +68,63 @@ def get_preset_venue(preset_id: str):
         raise HTTPException(404, str(e))
 
 
+def get_store() -> Storage:
+    return Storage()  # reads QFLOW_DB each time, so tests can point it elsewhere
+
+
+# ============================================================ saved venues
+def _checked_venue(req: VenueSaveRequest) -> dict:
+    """Only venues the optimiser can actually solve are saved."""
+    venue = Venue.from_dict(req.venue.model_dump())
+    try:
+        RoutingProblem(venue)
+    except ValueError as e:
+        raise HTTPException(422, f"This venue can't be saved yet: {e}")
+    return venue.to_dict()
+
+
+def _venue_summary(v: dict) -> dict:
+    try:
+        qubits = RoutingProblem(Venue.from_dict(v)).num_qubits
+    except ValueError:
+        qubits = None
+    return {"id": v["id"], "name": v["name"], "updated_at": v["updated_at"], "num_qubits": qubits,
+            "total_people": sum(g["size"] for g in v.get("crowd_groups", []))}
+
+
+@app.get("/api/v1/venues")
+def list_saved_venues():
+    return [_venue_summary(v) for v in get_store().list_venues()]
+
+
+@app.get("/api/v1/venues/{venue_id}")
+def get_saved_venue(venue_id: int):
+    v = get_store().get_venue(venue_id)
+    if not v:
+        raise HTTPException(404, f"Saved venue {venue_id} not found.")
+    return v
+
+
+@app.post("/api/v1/venues", status_code=201)
+def save_venue(req: VenueSaveRequest):
+    data = _checked_venue(req)
+    return _venue_summary(get_store().get_venue(get_store().save_venue(data)))
+
+
+@app.put("/api/v1/venues/{venue_id}")
+def update_saved_venue(venue_id: int, req: VenueSaveRequest):
+    data = _checked_venue(req)
+    if not get_store().update_venue(venue_id, data):
+        raise HTTPException(404, f"Saved venue {venue_id} not found.")
+    return _venue_summary(get_store().get_venue(venue_id))
+
+
+@app.delete("/api/v1/venues/{venue_id}", status_code=204)
+def delete_saved_venue(venue_id: int):
+    if not get_store().delete_venue(venue_id):
+        raise HTTPException(404, f"Saved venue {venue_id} not found.")
+
+
 @app.post("/api/v1/problem")
 def describe_problem(req: ProblemRequest):
     """Formulation summary: decision variables, qubits, resources, penalty."""
@@ -115,19 +173,50 @@ def optimize(req: OptimizeRequest):
     except ValueError:
         pass  # too large for exhaustive search
 
-    return {
+    response = {
         "problem": problem.describe(),
         "result": result.to_dict(problem),
         "baseline": baseline.to_dict(problem),
         "quality": quality,
+        "typical": None,
     }
+    if "metrics" in result.extra:
+        # The most common quantum answer: what a single run would usually give. The
+        # "result" is the best of all shots, which flatters quantum on small problems.
+        ml = result.extra["metrics"]["most_likely"]
+        typical = SolverResult.build(problem, result.solver, "typical", ml["bitstring"], 0.0)
+        response["typical"] = {**typical.to_dict(problem), "probability": ml["probability"]}
+    response["result"]["extra"].pop("history", None)  # large and unused by the app
+
+    # Every Lab run is recorded (proposal Section 12: "solver results").
+    q = quality or {}
+    run_quality = q.get("mean_approx_ratio", q.get("approximation_ratio"))
+    response["run_id"] = get_store().save_lab_run(
+        problem.venue.name, req.solver, problem.num_qubits, run_quality,
+        {**response, "venue": problem.venue.to_dict(), "settings": req.settings.model_dump(), "solver": req.solver})
+    return response
+
+
+@app.get("/api/v1/lab-runs")
+def list_lab_runs():
+    return get_store().list_lab_runs()
+
+
+@app.get("/api/v1/lab-runs/{run_id}")
+def get_lab_run(run_id: int):
+    r = get_store().get_lab_run(run_id)
+    if not r:
+        raise HTTPException(404, f"Run {run_id} not found.")
+    return r
+
+
+@app.delete("/api/v1/lab-runs/{run_id}", status_code=204)
+def delete_lab_run(run_id: int):
+    if not get_store().delete_lab_run(run_id):
+        raise HTTPException(404, f"Run {run_id} not found.")
 
 
 # =============================================================== experiments
-def get_store() -> Storage:
-    return Storage()  # reads QFLOW_DB each time, so tests can point it elsewhere
-
-
 def _execute(kind: str, config, exp_id: int) -> None:
     try:
         run_experiment(kind, config, get_store(), log=lambda _: None, exp_id=exp_id)

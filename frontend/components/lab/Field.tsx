@@ -28,6 +28,16 @@ export function NumberInput({ value, onChange, min = 0, step = 1, ...rest }:
   );
 }
 
+/** A number box that can be left empty, meaning "no value" (null). */
+export function OptionalNumberInput({ value, onChange, placeholder, min = 0, step = 1 }:
+  { value: number | null; onChange: (v: number | null) => void; placeholder?: string; min?: number; step?: number }) {
+  return (
+    <input type="number" inputMode="decimal" value={value ?? ""} min={min} step={step} placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
+      className={`${inputCls} placeholder:text-ink-soft/70`} />
+  );
+}
+
 export function Select<T extends string | number>({ value, onChange, options, disabled }:
   { value: T; onChange: (v: T) => void; options: { value: T; label: string }[]; disabled?: boolean }) {
   return (
@@ -54,9 +64,10 @@ export function Slider({ value, onChange, min, max, step, format }:
 }
 
 export function Button({ variant = "secondary", className = "", ...props }:
-  React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "danger" | "ghost" }) {
+  React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "danger" | "ghost" | "green" }) {
   const styles = {
     primary: "bg-ink text-white hover:bg-ink/90 border-ink",
+    green: "bg-exit text-white hover:bg-exit/90 border-exit",
     secondary: "bg-white text-ink border-line hover:border-ink/50",
     danger: "bg-white text-wine border-line hover:border-wine",
     ghost: "bg-transparent text-ink-soft border-transparent hover:text-ink",

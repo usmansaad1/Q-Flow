@@ -1,8 +1,8 @@
 "use client";
 
-import { PLACE_TYPES, type PlaceNode, type RouteEdge } from "@/lib/venue";
+import { MAX_SPLIT, PLACE_TYPES, WALK_SPEED, splitCrowd, type PlaceNode, type RouteEdge } from "@/lib/venue";
 import type { LocationType } from "@/lib/types";
-import { Button, Field, NumberInput, Select, TextInput } from "./Field";
+import { Button, Field, NumberInput, OptionalNumberInput, Select, TextInput } from "./Field";
 
 interface Props {
   node: PlaceNode | null;
@@ -33,9 +33,20 @@ export default function Inspector({ node, edge, nodeName, onNodeChange, onEdgeCh
               onChange={(v) => onNodeChange(node.id, { capacity: v > 0 ? v : null })} />
           </Field>
         ) : (
-          <Field label="People here" hint="They leave together as one crowd group. Each group adds qubits.">
-            <NumberInput value={d.people} min={0} step={10} onChange={(v) => onNodeChange(node.id, { people: v })} />
-          </Field>
+          <>
+            <Field label="People here">
+              <NumberInput value={d.people} min={0} step={10} onChange={(v) => onNodeChange(node.id, { people: v })} />
+            </Field>
+            <Field label="Split into groups"
+              hint={d.groups > 1
+                ? `Groups of ${splitCrowd(d.name, d.people, d.groups).map((g) => g.size).join(", ")}. Each can take a different route. Adds qubits for quantum solvers.`
+                : "Everyone here leaves together by one route. Split to let them use several routes; each extra group adds qubits."}>
+              <Select<number> value={d.groups} onChange={(v) => onNodeChange(node.id, { groups: v })}
+                options={Array.from({ length: MAX_SPLIT }, (_, i) => ({
+                  value: i + 1, label: i === 0 ? "1 (move together)" : `${i + 1} groups`,
+                }))} />
+            </Field>
+          </>
         )}
         <Button variant="danger" onClick={onDelete}>Delete {isExit ? "exit" : "area"}</Button>
       </div>
@@ -52,6 +63,13 @@ export default function Inspector({ node, edge, nodeName, onNodeChange, onEdgeCh
         </Field>
         <Field label="Length (metres)">
           <NumberInput value={edge.data!.length} min={1} onChange={(v) => onEdgeChange(edge.id, { length: v })} />
+        </Field>
+        <Field label="Travel time (seconds)"
+          hint={edge.data!.travelTime == null
+            ? `Empty means estimated from length at walking pace: about ${Math.round(edge.data!.length / WALK_SPEED)} s.`
+            : "Use this for stairs, ramps or slow routes. Clear it to go back to the estimate."}>
+          <OptionalNumberInput value={edge.data!.travelTime} min={1} placeholder={`about ${Math.round(edge.data!.length / WALK_SPEED)}`}
+            onChange={(v) => onEdgeChange(edge.id, { travelTime: v })} />
         </Field>
         <Button variant="danger" onClick={onDelete}>Delete route</Button>
       </div>

@@ -112,6 +112,12 @@ export default function SolverPanel(p: Props) {
         </Button>
       </div>
       {p.blocked && <p className="text-xs text-wine">{p.blocked}</p>}
+      {p.running && SOLVERS.find((s) => s.key === p.running)?.quantum && (
+        <p className="text-xs text-ink-soft" role="status">
+          Simulating a {p.qubits ?? ""} qubit quantum circuit on this computer.
+          {(p.qubits ?? 0) >= 12 ? " Circuits this size can take one to two minutes." : " This usually takes a few seconds."}
+        </p>
+      )}
     </div>
   );
 }

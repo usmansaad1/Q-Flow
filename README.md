@@ -17,7 +17,7 @@ The aim is not to show quantum winning. Classical methods are expected to stay a
 | 1 | Venue model, shared optimisation formulation, classical solvers, preset venues, tests | Done |
 | 2 | QAOA on ideal and noisy simulators, quantum quality metrics | Done |
 | 3 | Automated experiments, SQLite storage, CSV and chart export | Done |
-| 4 | Web application: overview, venue lab, experiments dashboard | Done |
+| 4 | Web application: overview, venue lab, experiments dashboard, saved venues | Done |
 | 5 | Real IBM hardware runs, methodology and limitations pages, demo scenarios | Next |
 
 ---
@@ -128,7 +128,7 @@ Both terminals need to stay open while using the app.
 
 ### Overview (`/`)
 
-Opens on a live plan of the Concert Venue. The **Nearest gate** and **Optimised** buttons switch between everyone heading to their closest gate (560 people over capacity) and the optimal routing (nobody over capacity). Routes thicken and change colour with load.
+Opens on a live plan of the Concert Venue. The **Nearest gate** and **Optimised** buttons switch between everyone heading to their closest gate (780 people sent to a gate that can take 500, so 280 people over capacity) and the optimal routing (nobody over capacity). Routes thicken and change colour with load.
 
 ### Venue lab (`/lab`)
 
@@ -136,16 +136,24 @@ The main workspace for building venues and comparing solvers.
 
 **Building a venue**
 
-* Load a preset from the dropdown, or press **Start blank**.
+* Load a preset or saved venue from the dropdown, or press the green **New blank venue** button above the edit panel to start from scratch.
 * **Add area** and **Add exit** place new boxes on the canvas.
 * Drag the **purple dot** on the right edge of a box onto another box to add a route.
 * Click any area, exit or route to edit it in the side panel:
-  * areas: name, type (zone, hall, seating, event area, corridor, entrance) and number of people
+  * areas: name, type (zone, hall, seating, event area, corridor, entrance), number of people, and **Split into groups** (1 to 4). By default everyone in an area leaves together by one route; splitting turns them into near equal groups that can each take a different route.
   * exits: name and capacity
-  * routes: capacity and length in metres
+  * routes: capacity, length in metres, and optionally travel time in seconds. Leave travel time empty to estimate it from length at walking pace (1.3 m/s); set it for stairs, ramps or slow routes. Custom times appear on the map label.
 * Press **Delete** to remove the selected item.
 
-Each area with people becomes one crowd group. The counter at the top right shows how many qubits the venue needs: crowd groups multiplied by routes considered per group (2 by default). Errors such as a missing exit or duplicate names are explained in plain language.
+**Saving venues**
+
+* **Save venue** stores the current venue, including its layout, in the database. It then appears under **Your saved venues** in the venue dropdown.
+* The status next to the button shows whether there are unsaved changes. Switching venues with unsaved changes asks for confirmation first.
+* The **More** menu can download the venue as a `.qflow.json` file, open a venue file, save a copy as a new venue, undo changes since loading, or delete a saved venue.
+* Only venues the optimiser can actually solve can be saved. Problems are explained in plain language.
+* Saved venues live in the local database, which is not committed. To keep a venue in the repository, for example a demo scenario, download it as a file and commit the file.
+
+Each area with people becomes one crowd group, or several if split. The counter at the top right shows how many qubits the venue needs: crowd groups multiplied by routes considered per group (2 by default). Splitting makes no difference to cost for the classical solvers but adds qubits for quantum ones, so it is off by default. Errors such as a missing exit or duplicate names are explained in plain language.
 
 **Solving**
 
@@ -156,7 +164,8 @@ Choose a solver (Classical, QAOA simulator, Noisy QAOA, or IBM hardware once Sta
 
 **Reading the results**
 
-* The buttons over the map switch between the nearest exit plan and each solver's plan. Route colours show load: green under 60%, amber 60% to 85%, red 85% to 100%, wine over capacity.
+* The buttons over the map switch between the nearest exit plan and each solver's plan. For quantum solvers a second switch chooses between the **most common answer** (the default: what a single quantum run would usually give) and the **best of all shots**.
+* Every run is saved automatically. **Run history**, below the results, lists past runs; **Open** restores the venue, settings, table and map. Route colours show load: green under 60%, amber 60% to 85%, red 85% to 100%, wine over capacity.
 * The comparison table shows, for each solver:
 
 | Measure | Meaning |
@@ -166,7 +175,7 @@ Choose a solver (Classical, QAOA simulator, Noisy QAOA, or IBM hardware once Sta
 | Valid plans | Share of answers that send every group down exactly one route |
 | Objective score | The value being minimised; lower is better |
 | Congestion score | The congestion part of the objective |
-| People over capacity | Exact count of people beyond route and exit capacities |
+| People over capacity | The fewest people who would have to be taken out for every route and exit to fit. Each person is counted once, even if their path passes several overloaded routes and exits. |
 | Overloaded routes and exits | How many routes and exits are over capacity |
 | Busiest route or exit | Highest load as a percentage of capacity |
 | Run time | Wall clock time; quantum time is simulation on this computer, including parameter training |
@@ -214,13 +223,13 @@ Defined in `backend/app/core/problem.py`.
 | Term | What it penalises |
 |---|---|
 | Distance | People multiplied by metres walked |
-| Travel time | People multiplied by seconds walked (estimated from length at 1.3 m/s unless given) |
+| Travel time | People multiplied by seconds walked (the route's given travel time, or estimated from length at 1.3 m/s) |
 | Congestion | The square of each route's and exit's load relative to its capacity |
 | Overflow | People beyond capacity on each route and exit |
 
 A penalty term enforces exactly one route per group.
 
-**Overflow approximation.** True overflow, `max(0, load − capacity)`, cannot be written exactly in the quadratic form quantum optimisation needs. Q-Flow fits the best quadratic approximation for each route and exit by least squares over every possible combination of groups using it. The fit is exact when at most two groups share a route or exit, and approximate beyond that. The exact number of people over capacity is always reported separately, so no result hides an overflow.
+**Overflow approximation.** True overflow, `max(0, load − capacity)`, cannot be written exactly in the quadratic form quantum optimisation needs. Q-Flow fits the best quadratic approximation for each route and exit by least squares over every possible combination of groups using it. The fit is exact when at most two groups share a route or exit, and approximate beyond that. The exact number of people over capacity is always reported separately, so no result hides an overflow. It is calculated as the fewest people who would have to be removed for every route and exit to fit, using a small linear programme, so the same people are never counted twice along one path while separate overloads at different exits still add up.
 
 **Penalty strength.** The penalty is set from the cost of the nearest exit plan, which guarantees that the lowest energy state of the problem is always the best valid plan. The tests verify this by checking every possible answer.
 
@@ -273,7 +282,7 @@ Defined in `backend/app/core/experiments.py`.
 
 ### Where results go
 
-* Every solver execution is one row in the SQLite database `backend/data/qflow.db`. This is local working data and is not committed.
+* Every solver execution is one row in the SQLite database `backend/data/qflow.db`, which also holds saved venues. This is local working data and is not committed.
 * Each experiment is exported to `backend/results/<id>_<kind>/` as `runs.csv` (every run), `summary.csv` (mean and standard deviation per group) and a PNG chart. These exports are committed as the project's evidence.
 
 ---
@@ -308,6 +317,16 @@ Example request:
 
 Instead of `preset_id`, a full `venue` object can be sent with `locations`, `routes` and `crowd_groups`.
 
+### Saved venues
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/venues` | Saved venues with qubit counts and crowd totals |
+| GET | `/api/v1/venues/{id}` | Full definition of one saved venue |
+| POST | `/api/v1/venues` | Save a new venue: `{"venue": {...}}`. Unsolvable venues are rejected. |
+| PUT | `/api/v1/venues/{id}` | Update a saved venue |
+| DELETE | `/api/v1/venues/{id}` | Delete a saved venue |
+
 ### Experiments
 
 | Method | Path | Purpose |
@@ -332,13 +351,13 @@ q-flow/
 │   │   │   ├── presets.py         4, 6, 8 and 10 qubit preset venues
 │   │   │   ├── generator.py       seeded random venues for scaling experiments
 │   │   │   ├── experiments.py     the four experiments
-│   │   │   ├── storage.py         SQLite storage
+│   │   │   ├── storage.py         SQLite storage for experiments and saved venues
 │   │   │   ├── charts.py          CSV and PNG export
 │   │   │   └── solvers/           nearest exit, exact, CP SAT, QAOA
 │   │   ├── api/schemas.py         request models
 │   │   └── main.py                FastAPI routes
 │   ├── scripts/                   command line tools
-│   ├── tests/                     60 automated tests
+│   ├── tests/                     71 automated tests
 │   ├── results/                   exported experiment evidence
 │   └── requirements.txt
 ├── frontend/
@@ -358,16 +377,19 @@ cd backend
 python -m pytest -q tests
 ```
 
-The 60 tests check the guarantees every comparison depends on:
+The 71 tests check the guarantees every comparison depends on:
 
 * The lowest energy answer is always the best valid plan, checked against every possible answer.
 * Every invalid answer scores worse than the optimum.
+* People over capacity counts each person once along a path, and adds up separate overloads.
+* Splitting a crowd into groups adds qubits and lets it spread over several routes.
 * The exact solver, CP SAT and the Qiskit export all agree.
 * The Ising conversion used by QAOA matches the formulation exactly.
 * Qiskit's bit order matches the formulation.
 * Ideal QAOA beats random guessing, and more noise lowers quality.
 * Experiments run, store and export correctly, and failures are recorded.
 * The API returns correct results for every solver.
+* Saved venues keep their layout and any given travel times, estimated times are never stored as given, and unsolvable venues are refused.
 
 The frontend is checked with TypeScript, ESLint and a production build:
 
@@ -383,12 +405,11 @@ npm run build
 ## Known limitations
 
 * **Simplified movement.** The model decides which exit route each group takes. It does not simulate people moving step by step or visiting several areas before leaving. Results are a visual representation of the optimisation, not a physical crowd simulation.
-* **One crowd group per area,** and each route works in both directions.
+* **Each crowd group moves as one unit,** as the proposal's binary formulation requires (a group is either on a route or not). A large crowd can be split into up to 4 groups per area to use several routes, at the cost of extra qubits. Each route works in both directions.
 * **Shortest routes only.** Each group considers its few shortest routes to the exits; a longer route drawn on the canvas may not be considered if shorter options exist.
 * **Overflow is approximated** in the quantum formulation when three or more groups share a route or exit. Exact overflow is always reported.
 * **Simulation limit of 16 qubits.** Larger problems are solved classically only.
 * **Quantum run times are simulation times** on a laptop and say nothing about future quantum hardware speed.
-* **Custom venues are not saved yet;** they last only while the page is open.
 
 ---
 

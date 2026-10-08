@@ -46,6 +46,7 @@ function PlaceNodeView({ data, selected }: NodeProps<PlaceNode>) {
       <div className="mt-0.5 flex items-center gap-2 text-[11px] text-ink-soft">
         {type && <span className="capitalize">{type}</span>}
         {data.people > 0 && <span className="num font-semibold text-ink">{data.people} people</span>}
+        {data.people > 0 && data.groups > 1 && <span className="num rounded-[2px] bg-quantum-soft px-1 font-semibold text-quantum">{data.groups} groups</span>}
       </div>
       <Handles editable={editable} />
     </div>
@@ -94,7 +95,7 @@ function RouteEdgeView({ id, source, target, data, selected }: EdgeProps<RouteEd
           style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}>
           {hasPlan
             ? <><b style={{ color: data!.util! > 1 ? "#7A1F3D" : undefined }}>{data!.load}</b> / {data!.capacity}</>
-            : <>{data?.capacity} cap, {data?.length} m</>}
+            : <>{data?.capacity} cap, {data?.length} m{data?.travelTime != null && <b className="font-semibold">, {data.travelTime} s</b>}</>}
         </div>
       </EdgeLabelRenderer>
     </>

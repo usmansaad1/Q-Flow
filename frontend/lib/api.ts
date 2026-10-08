@@ -1,6 +1,6 @@
 import type {
   ExperimentDetail, ExperimentInfo, ExperimentKind, OptimizeResponse, PresetInfo,
-  ProblemSettings, ProblemSummary, QuantumSettings, VenueDTO,
+  ProblemSettings, ProblemSummary, QuantumSettings, SavedVenueSummary, VenueDTO, LabRunSummary, LabRunDetail,
 } from "./types";
 
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
@@ -38,6 +38,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   presets: () => request<PresetInfo[]>("/api/v1/presets"),
   preset: (id: string) => request<VenueDTO>(`/api/v1/presets/${id}`),
+  savedVenues: () => request<SavedVenueSummary[]>("/api/v1/venues"),
+  savedVenue: (id: number) => request<VenueDTO>(`/api/v1/venues/${id}`),
+  saveVenue: (venue: VenueDTO) =>
+    request<SavedVenueSummary>("/api/v1/venues", { method: "POST", body: JSON.stringify({ venue }) }),
+  updateVenue: (id: number, venue: VenueDTO) =>
+    request<SavedVenueSummary>(`/api/v1/venues/${id}`, { method: "PUT", body: JSON.stringify({ venue }) }),
+  deleteVenue: (id: number) => request<void>(`/api/v1/venues/${id}`, { method: "DELETE" }),
   problem: (venue: VenueDTO, settings: ProblemSettings) =>
     request<ProblemSummary>("/api/v1/problem", { method: "POST", body: JSON.stringify({ venue, settings }) }),
   optimize: (venue: VenueDTO, settings: ProblemSettings, solver: string, quantum?: QuantumSettings) =>
@@ -45,6 +52,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ venue, settings, solver, ...(quantum ? { quantum } : {}) }),
     }),
+  labRuns: () => request<LabRunSummary[]>("/api/v1/lab-runs"),
+  labRun: (id: number) => request<LabRunDetail>(`/api/v1/lab-runs/${id}`),
+  deleteLabRun: (id: number) => request<void>(`/api/v1/lab-runs/${id}`, { method: "DELETE" }),
   experiments: () => request<ExperimentInfo[]>("/api/v1/experiments"),
   experiment: (id: number) => request<ExperimentDetail>(`/api/v1/experiments/${id}`),
   startExperiment: (kind: ExperimentKind, quick: boolean) =>

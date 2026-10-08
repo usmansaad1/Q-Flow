@@ -39,6 +39,7 @@ from itertools import combinations, product
 from typing import Sequence
 
 import numpy as np
+from scipy.optimize import linprog
 
 from app.core.venue import Venue, PathOption, exit_resource_id
 
@@ -81,7 +82,8 @@ class Evaluation:
     resource_loads: dict[str, int]
     utilisation: dict[str, float]
     capacity_violations: int          # resources over capacity
-    people_over_capacity: int         # exact total overflow
+    people_over_capacity: int         # fewest people to remove so every route and exit fits
+    total_excess: int                 # excess summed over every route and exit (counts people repeatedly)
     max_utilisation: float
     total_person_distance: float      # raw person metres
     assignment: dict[str, int | None] # group -> chosen option index within group (None if invalid)
@@ -107,8 +109,18 @@ class RoutingProblem:
     def _build_options(self) -> None:
         self.options: list[Option] = []
         self.group_options: dict[str, list[int]] = {}
+        # Expected loads if every group took its shortest route; used to pick detours
+        # around crowded roads when more than one route per exit is considered.
+        loads: dict[str, int] = defaultdict(int)
+        shortest: dict[str, set[str]] = {}
         for g in self.venue.crowd_groups:
-            paths = self.venue.candidate_paths(g.location, k=self.paths_per_group)
+            first = self.venue.candidate_paths(g.location, k=1)
+            shortest[g.group_id] = set(first[0].resources()) if first else set()
+            for rid in shortest[g.group_id]:
+                loads[rid] += g.size
+        for g in self.venue.crowd_groups:
+            paths = self.venue.candidate_paths(g.location, k=self.paths_per_group, loads=loads,
+                                               size=g.size, own=shortest[g.group_id])
             if not paths:
                 raise ValueError(f"Group '{g.group_id}' cannot reach any exit.")
             idxs = []
@@ -328,12 +340,37 @@ class RoutingProblem:
             resource_loads=loads,
             utilisation=util,
             capacity_violations=sum(1 for v in over.values() if v > 0),
-            people_over_capacity=sum(over.values()),
+            people_over_capacity=self._people_over_capacity(x, loads),
+            total_excess=sum(over.values()),
             max_utilisation=max(util.values()) if util else 0.0,
             total_person_distance=sum(self.options[i].group_size * self.options[i].path.length
                                       for i in range(self.num_variables) if x[i]),
             assignment=assignment,
         )
+
+    def _people_over_capacity(self, x: Sequence[int], loads: dict[str, int]) -> int:
+        """
+        The fewest people who would have to be taken out of the plan so that every
+        route and exit is within capacity.
+
+        Simply adding up the excess on every route and exit counts the same people
+        repeatedly: 280 extra people on a corridor and the gate it leads to are the
+        same 280 people, not 560. Taking the largest single excess fails the other way
+        when two separate gates are overloaded by different people. This small linear
+        programme answers the question exactly in both cases.
+        """
+        overloaded = [rid for rid, load in loads.items() if load > self.resources[rid].capacity]
+        if not overloaded:
+            return 0
+        chosen = [a for a in range(self.num_variables) if x[a]]
+        # Variable r_a = people removed from chosen option a, between 0 and its group size.
+        A_ub = [[-1.0 if a in self.resource_users[rid] else 0.0 for a in chosen] for rid in overloaded]
+        b_ub = [self.resources[rid].capacity - loads[rid] for rid in overloaded]
+        res = linprog(c=np.ones(len(chosen)), A_ub=A_ub, b_ub=b_ub,
+                      bounds=[(0, self.options[a].group_size) for a in chosen], method="highs")
+        if not res.success:  # cannot happen (removing everyone always works), but never hide overflow
+            return int(sum(loads[r] - self.resources[r].capacity for r in overloaded))
+        return int(np.ceil(res.fun - 1e-9))
 
     # ============================================================== summary
     def describe(self) -> dict:

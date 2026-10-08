@@ -44,8 +44,12 @@ class Route:
     def __post_init__(self):
         if self.id is None:
             self.id = f"{self.from_node}|{self.to_node}"
-        if self.travel_time is None:
-            self.travel_time = self.length / DEFAULT_WALK_SPEED
+
+    @property
+    def effective_travel_time(self) -> float:
+        """Travel time in seconds: the given value, or an estimate from length at walking speed.
+        Kept separate so an estimate is never saved as if someone had typed it in."""
+        return self.travel_time if self.travel_time is not None else self.length / DEFAULT_WALK_SPEED
 
 
 @dataclass
@@ -135,6 +139,8 @@ class Venue:
                 errors.append(f"Route '{r.id}' references an unknown location.")
             if r.capacity <= 0 or r.length <= 0:
                 errors.append(f"Route '{r.id}' needs positive capacity and length.")
+            if r.travel_time is not None and r.travel_time <= 0:
+                errors.append(f"Route '{r.id}' travel time must be positive.")
         gids = [g.group_id for g in self.crowd_groups]
         if len(gids) != len(set(gids)):
             errors.append("Crowd group ids must be unique.")
@@ -155,13 +161,15 @@ class Venue:
         for loc in self.locations:
             g.add_node(loc.id, type=loc.location_type)
         for r in self.routes:
-            attrs = dict(route_id=r.id, length=r.length, travel_time=r.travel_time, capacity=r.capacity)
+            attrs = dict(route_id=r.id, length=r.length, travel_time=r.effective_travel_time, capacity=r.capacity)
             g.add_edge(r.from_node, r.to_node, **attrs)
             if r.bidirectional:
                 g.add_edge(r.to_node, r.from_node, **attrs)
         return g
 
-    def candidate_paths(self, start: str, k: int | None = None, weight: str = "length") -> list[PathOption]:
+    def candidate_paths(self, start: str, k: int | None = None, weight: str = "length",
+                        loads: dict[str, int] | None = None, size: int = 0,
+                        own: set[str] | None = None) -> list[PathOption]:
         """
         Candidate exit paths for a group starting at `start`, shortest first.
 
@@ -201,15 +209,37 @@ class Venue:
             g.add_edge(ex, sink, route_id=None, length=0.0, travel_time=0.0, capacity=0)
         chosen = list(per_exit)
         seen = {tuple(p.nodes) for p in chosen}
+        pool = []
+        limit = 2 * getattr(per_exit[0], weight) if per_exit else float("inf")
         for nodes in itertools.islice(nx.shortest_simple_paths(g, start, sink, weight=weight), 200):
             nodes = nodes[:-1]
             if tuple(nodes) in seen:
                 continue
-            chosen.append(to_option(nodes))
-            seen.add(tuple(nodes))
-            if len(chosen) >= k:
-                break
+            opt = to_option(nodes)
+            if getattr(opt, weight) > limit:
+                break  # paths come shortest first, so nothing later qualifies
+            pool.append(opt)
         g.remove_node(sink)
+
+        # Congestion aware choice of the extra routes: prefer detours that avoid roads and
+        # exits other groups are expected to crowd, then shorter ones. Without loads this
+        # is simply "next shortest". The number of routes, and so of qubits, is unchanged.
+        caps = {r.id: r.capacity for r in self.routes}
+        caps.update({exit_resource_id(e.id): e.capacity for e in self.exits if e.capacity})
+        own = own or set()
+
+        def crowding(p: PathOption) -> float:
+            if not loads:
+                return 0.0
+            total = 0.0
+            for rid in p.resources():
+                if rid in caps:
+                    load = loads.get(rid, 0) - (size if rid in own else 0) + size
+                    total += max(0.0, load / caps[rid] - 1.0)
+            return total
+
+        pool.sort(key=lambda p: (round(crowding(p), 9), getattr(p, weight)))
+        chosen.extend(pool[: k - len(chosen)])
         return chosen
 
     # --------------------------------------------------------- serialisation

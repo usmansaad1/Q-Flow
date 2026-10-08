@@ -6,14 +6,19 @@ export type PlaceData = {
   name: string;
   locationType: LocationType;
   capacity: number | null; // exits only
-  people: number;          // size of the crowd group starting here (0 = none)
+  people: number;          // total people starting here (0 = none)
+  groups: number;          // how many crowd groups those people are split into (1 = move together)
   load?: number;           // exit load in the plan being shown
   util?: number;
 };
 
+/** Walking speed the backend uses to estimate travel time when none is given. */
+export const WALK_SPEED = 1.3;
+
 export type RouteData = {
   capacity: number;
   length: number;
+  travelTime: number | null; // seconds; null means "estimate from length"
   load?: number;
   util?: number;
 };
@@ -36,7 +41,11 @@ export const newId = (prefix: string) => `${prefix}_${Date.now().toString(36)}_$
 
 export function venueToGraph(v: VenueDTO): { nodes: PlaceNode[]; edges: RouteEdge[] } {
   const people = new Map<string, number>();
-  v.crowd_groups.forEach((g) => people.set(g.location, (people.get(g.location) ?? 0) + g.size));
+  const groupCount = new Map<string, number>();
+  v.crowd_groups.forEach((g) => {
+    people.set(g.location, (people.get(g.location) ?? 0) + g.size);
+    groupCount.set(g.location, (groupCount.get(g.location) ?? 0) + 1);
+  });
   const idByName = new Map<string, string>();
   const nodes: PlaceNode[] = v.locations.map((l, i) => {
     const id = newId("n");
@@ -49,6 +58,7 @@ export function venueToGraph(v: VenueDTO): { nodes: PlaceNode[]; edges: RouteEdg
       data: {
         name: l.id, locationType: l.location_type, capacity: l.capacity ?? null,
         people: isExit ? 0 : people.get(l.id) ?? 0,
+        groups: isExit ? 1 : groupCount.get(l.id) ?? 1,
       },
     };
   });
@@ -57,7 +67,7 @@ export function venueToGraph(v: VenueDTO): { nodes: PlaceNode[]; edges: RouteEdg
     type: "route",
     source: idByName.get(r.from_node)!,
     target: idByName.get(r.to_node)!,
-    data: { capacity: r.capacity, length: r.length },
+    data: { capacity: r.capacity, length: r.length, travelTime: r.travel_time ?? null },
   }));
   return { nodes, edges };
 }
@@ -90,9 +100,11 @@ export function graphToVenue(name: string, nodes: PlaceNode[], edges: RouteEdge[
     if (seen.has(key)) errors.push(`There are two routes between ${a} and ${b}.`);
     seen.add(key);
     if (!(e.data!.capacity > 0) || !(e.data!.length > 0)) errors.push(`Route ${a} to ${b} needs a capacity and length above 0.`);
+    if (e.data!.travelTime != null && !(e.data!.travelTime > 0)) errors.push(`Route ${a} to ${b} needs a travel time above 0, or leave it empty.`);
     routeIds.set(e.id, `${a}|${b}`);
   }
   for (const n of crowds) {
+    if (n.data.groups > n.data.people) errors.push(`${n.data.name} can't be split into more groups than it has people.`);
     if (!edges.some((e) => e.source === n.id || e.target === n.id))
       errors.push(`${n.data.name} has people but no routes.`);
   }
@@ -115,8 +127,27 @@ export function graphToVenue(name: string, nodes: PlaceNode[], edges: RouteEdge[
         to_node: nameById.get(e.target)!,
         capacity: e.data!.capacity,
         length: e.data!.length,
+        travel_time: e.data!.travelTime ?? null,
       })),
-      crowd_groups: crowds.map((n) => ({ group_id: `${n.data.name.trim()} crowd`, location: n.data.name.trim(), size: n.data.people })),
+      crowd_groups: crowds.flatMap((n) => splitCrowd(n.data.name.trim(), n.data.people, n.data.groups)),
     },
   };
+}
+
+/** Maximum number of groups one area's crowd can be split into. */
+export const MAX_SPLIT = 4;
+
+/**
+ * Split an area's crowd into near equal groups, each of which moves as one unit
+ * and can take a different route. 301 people in 3 groups gives 101, 100, 100.
+ * With one group the name stays "<area> crowd", so unsplit venues are unchanged.
+ */
+export function splitCrowd(area: string, people: number, groups: number) {
+  const k = Math.max(1, Math.min(Math.floor(groups) || 1, MAX_SPLIT, people));
+  const base = Math.floor(people / k), extra = people % k;
+  return Array.from({ length: k }, (_, i) => ({
+    group_id: k === 1 ? `${area} crowd` : `${area} crowd ${i + 1}`,
+    location: area,
+    size: base + (i < extra ? 1 : 0),
+  }));
 }

@@ -1,19 +1,23 @@
 "use client";
 
 import { useEdgesState, useNodesState, type Connection } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import LoadLegend from "@/components/LoadLegend";
 import VenueCanvas from "@/components/VenueCanvas";
-import { Button, Select, TextInput } from "@/components/lab/Field";
 import Inspector from "@/components/lab/Inspector";
 import PlanList from "@/components/lab/PlanList";
 import ResultsBoard from "@/components/lab/ResultsBoard";
+import { Button } from "@/components/lab/Field";
 import SolverPanel from "@/components/lab/SolverPanel";
+import VenueBar, { type VenueSource } from "@/components/lab/VenueBar";
+import RunHistory from "@/components/lab/RunHistory";
 import { DEVICE_MODELS, QUANTUM_QUBIT_LIMIT, SOLVERS, type SolverKey } from "@/components/lab/solvers";
 import { api } from "@/lib/api";
 import { planLoads } from "@/lib/plan";
-import type { OptimizeResponse, PresetInfo, ProblemSettings, ProblemSummary, QuantumSettings, VenueDTO } from "@/lib/types";
+import type {
+  LabRunSummary, OptimizeResponse, PresetInfo, ProblemSettings, ProblemSummary, QuantumSettings, SavedVenueSummary, VenueDTO,
+} from "@/lib/types";
 import { graphToVenue, newId, venueToGraph, type PlaceNode, type RouteEdge } from "@/lib/venue";
 
 const DEFAULT_SETTINGS: ProblemSettings = {
@@ -30,7 +34,12 @@ type Shown = "baseline" | SolverKey | null;
 
 export default function LabPage() {
   const [presets, setPresets] = useState<PresetInfo[]>([]);
-  const [presetId, setPresetId] = useState("small_event_hall");
+  const [savedList, setSavedList] = useState<SavedVenueSummary[]>([]);
+  const [source, setSource] = useState<VenueSource>({ kind: "preset", id: "small_event_hall" });
+  // Exact snapshot (layout included) of the venue as last loaded or saved, to detect unsaved edits.
+  const [cleanSnapshot, setCleanSnapshot] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [venueName, setVenueName] = useState("");
   const [nodes, setNodes, onNodesChange] = useNodesState<PlaceNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<RouteEdge>([]);
@@ -43,28 +52,35 @@ export default function LabPage() {
   const [results, setResults] = useState<{ sig: string | null; runs: Runs; shown: Shown; error: string | null }>(
     { sig: null, runs: {}, shown: null, error: null });
   const [running, setRunning] = useState<SolverKey | null>(null);
+  const [bestOfShots, setBestOfShots] = useState(false);
   const [noiseLabel, setNoiseLabel] = useState("");
   const [problem, setProblem] = useState<{ sig: string | null; summary: ProblemSummary | null; error: string | null }>(
     { sig: null, summary: null, error: null });
   const [apiError, setApiError] = useState<string | null>(null);
 
   // ------------------------------------------------------------ loading
-  const applyVenue = useCallback((v: VenueDTO) => {
+  const applyVenue = useCallback((v: VenueDTO, src: VenueSource) => {
     const g = venueToGraph(v);
     setNodes(g.nodes);
     setEdges(g.edges);
     setVenueName(v.name);
     setCanvasKey((k) => k + 1);
+    setSource(src);
+    setCleanSnapshot(snapshotOf(v.name, g.nodes, g.edges));
     setApiError(null);
   }, [setNodes, setEdges]);
 
-  const loadPreset = (id: string) =>
-    api.preset(id).then(applyVenue).catch((e) => setApiError(e.message));
+  const refreshSaved = () => api.savedVenues().then(setSavedList).catch(() => {});
 
   useEffect(() => {
     let alive = true;
-    Promise.all([api.presets(), api.preset("small_event_hall")])
-      .then(([p, v]) => { if (alive) { setPresets(p); applyVenue(v); } })
+    Promise.all([api.presets(), api.preset("small_event_hall"), api.savedVenues()])
+      .then(([p, v, sv]) => {
+        if (!alive) return;
+        setPresets(p);
+        setSavedList(sv);
+        applyVenue(v, { kind: "preset", id: "small_event_hall" });
+      })
       .catch((e) => { if (alive) setApiError(e.message); });
     return () => { alive = false; };
   }, [applyVenue]);
@@ -78,6 +94,114 @@ export default function LabPage() {
     const places = locations.map((l) => ({ id: l.id, type: l.location_type, capacity: l.capacity }));
     return JSON.stringify({ ...rest, locations: places, settings });
   }, [conversion, settings]);
+
+  // ---------------------------------------------------- saving and files
+  const snapshot = useMemo(() => snapshotOf(venueName, nodes, edges), [venueName, nodes, edges]);
+  const edited = snapshot !== cleanSnapshot;
+  const status = source.kind === "saved" ? (edited ? "unsaved" : "saved")
+    : source.kind === "preset" ? (edited ? "edited preset" : "unchanged preset") : "new";
+  const saveBlockedReason = conversion.venue ? null : conversion.errors[0] ?? "The venue is incomplete.";
+  const canSave = !saveBlockedReason && (source.kind !== "saved" || edited);
+
+  const flash = (kind: "ok" | "error", text: string) => {
+    setNotice({ kind, text });
+    if (kind === "ok") setTimeout(() => setNotice((n) => (n?.text === text ? null : n)), 3000);
+  };
+
+  const confirmDiscard = () =>
+    !edited || source.kind === "new" && nodes.length === 0 || confirm("Discard the unsaved changes to this venue?");
+
+  const uniqueName = (base: string) => {
+    const taken = new Set([...savedList.map((v) => v.name), ...presets.map((p) => p.name)]);
+    if (!taken.has(base)) return base;
+    for (let i = 2; ; i++) if (!taken.has(`${base} (${i})`)) return `${base} (${i})`;
+  };
+
+  const saveNew = async () => {
+    if (!conversion.venue) return;
+    const name = uniqueName(venueName.trim() || "My venue");
+    setSaving(true);
+    try {
+      const summary = await api.saveVenue({ ...conversion.venue, name });
+      setVenueName(name);
+      setSource({ kind: "saved", id: summary.id });
+      setCleanSnapshot(snapshotOf(name, nodes, edges));
+      await refreshSaved();
+      flash("ok", `Saved as "${name}".`);
+    } catch (e) {
+      flash("error", (e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const save = async () => {
+    if (!conversion.venue) return;
+    if (source.kind !== "saved") return saveNew();
+    setSaving(true);
+    try {
+      await api.updateVenue(source.id, conversion.venue);
+      setCleanSnapshot(snapshot);
+      await refreshSaved();
+      flash("ok", "Changes saved.");
+    } catch (e) {
+      flash("error", (e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const pick = (src: VenueSource) => {
+    if (!confirmDiscard()) return;
+    if (src.kind === "preset") api.preset(src.id).then((v) => applyVenue(v, src)).catch((e) => setApiError(e.message));
+    else if (src.kind === "saved") api.savedVenue(src.id).then((v) => applyVenue(v, src)).catch((e) => flash("error", e.message));
+  };
+
+  const reset = () => { if (source.kind !== "new" && confirmDiscard()) pick(source); };
+
+  const blank = () => {
+    if (!confirmDiscard()) return;
+    setNodes([]);
+    setEdges([]);
+    setVenueName("My venue");
+    setSource({ kind: "new" });
+    setCleanSnapshot(snapshotOf("My venue", [], []));
+  };
+
+  const removeSaved = async () => {
+    if (source.kind !== "saved" || !confirm(`Delete the saved venue "${venueName}"? This can't be undone.`)) return;
+    try {
+      await api.deleteVenue(source.id);
+      setSource({ kind: "new" });
+      setCleanSnapshot(null);
+      await refreshSaved();
+      flash("ok", "Saved venue deleted. It's still on the canvas until you leave or load another.");
+    } catch (e) {
+      flash("error", (e as Error).message);
+    }
+  };
+
+  const exportFile = () => {
+    if (!conversion.venue) return;
+    const slug = (venueName.trim() || "venue").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+    const url = URL.createObjectURL(new Blob([JSON.stringify(conversion.venue, null, 2)], { type: "application/json" }));
+    Object.assign(document.createElement("a"), { href: url, download: `${slug || "venue"}.qflow.json` }).click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importFile = async (file: File) => {
+    if (!confirmDiscard()) return;
+    try {
+      const v = JSON.parse(await file.text()) as VenueDTO;
+      if (!Array.isArray(v?.locations) || !Array.isArray(v?.routes) || !Array.isArray(v?.crowd_groups))
+        throw new Error("This file doesn't look like a Q-Flow venue.");
+      applyVenue({ ...v, name: v.name || file.name.replace(/\.(qflow\.)?json$/i, "") }, { kind: "new" });
+      setCleanSnapshot(null);
+      flash("ok", `Opened "${v.name || file.name}". Save it to keep it in your venues.`);
+    } catch (e) {
+      flash("error", e instanceof SyntaxError ? "That file isn't valid JSON." : (e as Error).message);
+    }
+  };
 
   // Fetch the formulation summary (qubit count, validation) whenever the problem changes.
   useEffect(() => {
@@ -113,8 +237,8 @@ export default function LabPage() {
     setNodes((ns) => [...ns.map((n) => ({ ...n, selected: false })), {
       id: newId("n"), type: exit ? "exit" : "place", position: { x: x + (count % 3) * 40, y }, selected: true,
       data: exit
-        ? { name: `Exit ${count}`, locationType: "exit", capacity: 300, people: 0 }
-        : { name: `Area ${count}`, locationType: "zone", capacity: null, people: 100 },
+        ? { name: `Exit ${count}`, locationType: "exit", capacity: 300, people: 0, groups: 1 }
+        : { name: `Area ${count}`, locationType: "zone", capacity: null, people: 100, groups: 1 },
     }]);
   };
 
@@ -124,7 +248,7 @@ export default function LabPage() {
       const data = { ...n.data, ...patch };
       if (patch.locationType) {
         const exit = patch.locationType === "exit";
-        if (exit) { data.people = 0; data.capacity = data.capacity ?? 300; }
+        if (exit) { data.people = 0; data.groups = 1; data.capacity = data.capacity ?? 300; }
         return { ...n, type: exit ? "exit" : "place", data };
       }
       return { ...n, data };
@@ -144,7 +268,7 @@ export default function LabPage() {
     if (!c.source || !c.target || c.source === c.target) return;
     const exists = edges.some((e) => (e.source === c.source && e.target === c.target) || (e.source === c.target && e.target === c.source));
     if (exists) return;
-    setEdges((es) => [...es, { id: newId("e"), type: "route", source: c.source!, target: c.target!, data: { capacity: 200, length: 15 } }]);
+    setEdges((es) => [...es, { id: newId("e"), type: "route", source: c.source!, target: c.target!, data: { capacity: 200, length: 15, travelTime: null } }]);
   };
 
   // ------------------------------------------------------------ solving
@@ -165,12 +289,40 @@ export default function LabPage() {
           : DEVICE_MODELS.find((d) => d.value === quantum.fake_backend)?.label.split(" (")[0] ?? quantum.fake_backend);
       }
       setResults((r) => r.sig === sig ? { ...r, runs: { ...r.runs, [key]: resp }, shown: key } : r);
+      refreshHistory();
     } catch (e) {
       setResults((r) => (r.sig === sig ? { ...r, error: (e as Error).message } : r));
     } finally {
       setRunning(null);
     }
   };
+
+  // ------------------------------------------------------- saved lab runs
+  const [history, setHistory] = useState<LabRunSummary[]>([]);
+  const pendingRestore = useRef<{ solver: SolverKey; resp: OptimizeResponse } | null>(null);
+  const refreshHistory = () => api.labRuns().then(setHistory).catch(() => {});
+  useEffect(() => { api.labRuns().then(setHistory).catch(() => {}); }, []);
+
+  const openRun = async (id: number) => {
+    if (!confirmDiscard()) return;
+    try {
+      const r = await api.labRun(id);
+      pendingRestore.current = { solver: r.solver as SolverKey, resp: r };
+      setSettings(r.settings);
+      applyVenue(r.venue, { kind: "new" });
+      flash("ok", `Opened run #${id}. Its results are shown below.`);
+    } catch (e) {
+      flash("error", (e as Error).message);
+    }
+  };
+
+  // Once the reopened venue has settled, attach its stored result to it.
+  useEffect(() => {
+    const p = pendingRestore.current;
+    if (!p || !signature) return;
+    pendingRestore.current = null;
+    setResults({ sig: signature, runs: { [p.solver]: p.resp }, shown: p.solver, error: null });
+  }, [signature, canvasKey]); // canvasKey changes on every load, even of an identical venue
 
   const runAll = async () => {
     for (const k of ["classical_exact", "qaoa_ideal", "qaoa_noisy"] as SolverKey[]) {
@@ -180,10 +332,18 @@ export default function LabPage() {
   };
 
   const anyRun = SOLVERS.map((s) => s.key).find((k) => runs[k]);
-  const shownResult = shown === "baseline" ? (anyRun ? runs[anyRun]!.baseline : null) : shown ? runs[shown]?.result ?? null : null;
+  const shownResp = shown && shown !== "baseline" ? runs[shown] : undefined;
+  const typical = shownResp?.typical ?? null;
+  const showTypical = !!typical && !bestOfShots;
+  const shownResult = shown === "baseline" ? (anyRun ? runs[anyRun]!.baseline : null)
+    : showTypical ? typical : shownResp?.result ?? null;
   const loads = useMemo(() => (shownResult ? planLoads(shownResult.evaluation, conversion.routeIds) : null),
     [shownResult, conversion.routeIds]);
-  const shownLabel = shown === "baseline" ? "Nearest exit plan" : shown ? `${SOLVERS.find((s) => s.key === shown)!.label} plan` : "";
+  const shownLabel = shown === "baseline" ? "Nearest exit plan"
+    : shown ? `${SOLVERS.find((s) => s.key === shown)!.label}: ${typical ? (showTypical ? "most common answer" : "best of all shots") : "plan"}` : "";
+  const shownNote = !typical ? undefined : showTypical
+    ? `Came up in ${(typical.probability * 100).toFixed(1)}% of shots. This is what a single quantum run would most often give.${typical.evaluation.feasible ? "" : " It breaks the one route per group rule."}`
+    : "The single best answer among all shots. Quantum rarely gives this; see Chance of the best plan.";
 
   return (
     <main className="mx-auto max-w-[1440px] space-y-5 px-5 py-6">
@@ -203,42 +363,65 @@ export default function LabPage() {
 
       {apiError && <p className="rounded-[3px] border border-wine/40 bg-white px-4 py-3 text-sm text-wine">{apiError}</p>}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="w-56">
-          <Select<string> value={presetId}
-            onChange={(v) => { setPresetId(v); loadPreset(v); }}
-            options={presets.length ? presets.map((p) => ({ value: p.id, label: `${p.name} (${p.num_qubits} qubits)` }))
-              : [{ value: presetId, label: "Loading venues…" }]} />
-        </div>
-        <div className="w-56"><TextInput aria-label="Venue name" value={venueName} onChange={(e) => setVenueName(e.target.value)} /></div>
-        <span className="mx-1 h-6 w-px bg-line" />
-        <Button onClick={() => addPlace(false)}>Add area</Button>
-        <Button onClick={() => addPlace(true)}>Add exit</Button>
-        <Button variant="ghost" onClick={() => loadPreset(presetId)}>Reset venue</Button>
-        <Button variant="ghost" onClick={() => { setNodes([]); setEdges([]); setVenueName("My venue"); }}>Start blank</Button>
-      </div>
+      <VenueBar presets={presets} saved={savedList} source={source} onPick={pick}
+        name={venueName} onName={setVenueName} status={status} canSave={canSave}
+        saveBlockedReason={saveBlockedReason} saving={saving} onSave={save} onSaveAsNew={saveNew}
+        onAddArea={() => addPlace(false)} onAddExit={() => addPlace(true)}
+        onReset={reset} onImport={importFile} onExport={exportFile} onDelete={removeSaved} />
+      {notice && (
+        <p role="status" className={`-mt-2 text-sm ${notice.kind === "ok" ? "text-exit" : "text-wine"}`}>{notice.text}</p>
+      )}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div>
-        <div className="relative h-[620px] overflow-hidden rounded-[4px] border border-line bg-white">
-          <VenueCanvas key={canvasKey} className="h-full w-full" editable nodes={nodes} edges={edges} loads={loads}
-            onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} />
-          {anyRun && (
-            <div className="absolute left-3 top-3 flex flex-wrap gap-1 rounded-[3px] border border-line bg-white/95 p-1" role="group" aria-label="Plan shown on the map">
-              {(["baseline", ...SOLVERS.map((s) => s.key).filter((k) => runs[k])] as Exclude<Shown, null>[]).map((k) => (
-                <button key={k} onClick={() => setShown(k)}
-                  className={`rounded-[2px] px-2.5 py-1 text-[13px] ${shown === k ? "bg-ink text-white" : "text-ink-soft hover:text-ink"}`}>
-                  {k === "baseline" ? "Nearest exit" : SOLVERS.find((s) => s.key === k)!.label}
-                </button>
-              ))}
+      {/* Two independent columns: the left (map and results) never moves when the
+          right hand controls grow, for example when "Optimisation priorities" opens. */}
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-5">
+          <div>
+            <div className="relative h-[620px] overflow-hidden rounded-[4px] border border-line bg-white">
+              <VenueCanvas key={canvasKey} className="h-full w-full" editable nodes={nodes} edges={edges} loads={loads}
+                onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} />
+              {anyRun && (
+                <div className="absolute left-3 top-3 flex flex-wrap gap-1 rounded-[3px] border border-line bg-white/95 p-1" role="group" aria-label="Plan shown on the map">
+                  {(["baseline", ...SOLVERS.map((s) => s.key).filter((k) => runs[k])] as Exclude<Shown, null>[]).map((k) => (
+                    <button key={k} onClick={() => setShown(k)}
+                      className={`rounded-[2px] px-2.5 py-1 text-[13px] ${shown === k ? "bg-ink text-white" : "text-ink-soft hover:text-ink"}`}>
+                      {k === "baseline" ? "Nearest exit" : SOLVERS.find((s) => s.key === k)!.label}
+                    </button>
+                  ))}
+                  {typical && (
+                    <span className="ml-1 flex gap-1 border-l border-line pl-2" role="group" aria-label="Which quantum answer">
+                      {([false, true] as const).map((b) => (
+                        <button key={String(b)} onClick={() => setBestOfShots(b)}
+                          className={`rounded-[2px] px-2.5 py-1 text-[13px] ${bestOfShots === b ? "bg-quantum text-white" : "text-ink-soft hover:text-ink"}`}>
+                          {b ? "Best of all shots" : "Most common answer"}
+                        </button>
+                      ))}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+            <LoadLegend className="mt-2" />
+          </div>
 
-        <LoadLegend className="mt-2" />
+          {runError && <p className="rounded-[3px] border border-wine/40 bg-white px-4 py-3 text-sm text-wine">{runError}</p>}
+
+          <ResultsBoard runs={runs} noiseLabel={noiseLabel} />
+
+          {shownResult && (
+            <section className="rounded-[4px] border border-line bg-panel p-4">
+              <PlanList title={shownLabel} plan={shownResult.routes} note={shownNote} />
+            </section>
+          )}
+
+          <RunHistory runs={history} onOpen={openRun} onDelete={async (id) => { await api.deleteLabRun(id); refreshHistory(); }} />
         </div>
 
         <aside className="space-y-5">
+          <Button variant="green" className="w-full py-2" onClick={blank}
+            title="Clear the canvas and build a venue from scratch">
+            New blank venue
+          </Button>
           <section className="rounded-[4px] border border-line bg-panel p-4">
             <Inspector node={selectedNode} edge={selectedEdge} nodeName={nameOf}
               onNodeChange={updateNode} onEdgeChange={updateEdge} onDelete={deleteSelected} />
@@ -250,18 +433,15 @@ export default function LabPage() {
           </section>
         </aside>
       </div>
-
-      {runError && <p className="rounded-[3px] border border-wine/40 bg-white px-4 py-3 text-sm text-wine">{runError}</p>}
-
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <ResultsBoard runs={runs} noiseLabel={noiseLabel} />
-        {shownResult && (
-          <section className="rounded-[4px] border border-line bg-panel p-4">
-            <PlanList title={shownLabel} plan={shownResult.routes}
-              note={shown && SOLVERS.find((s) => s.key === shown)?.quantum ? "The best plan found among all shots." : undefined} />
-          </section>
-        )}
-      </div>
     </main>
   );
+}
+
+/** Exact snapshot of the venue including layout, used to detect unsaved edits. */
+function snapshotOf(name: string, nodes: PlaceNode[], edges: RouteEdge[]): string {
+  return JSON.stringify({
+    name: name.trim(),
+    nodes: nodes.map((n) => [n.id, Math.round(n.position.x), Math.round(n.position.y), n.data.name, n.data.locationType, n.data.capacity, n.data.people, n.data.groups]),
+    edges: edges.map((e) => [e.id, e.source, e.target, e.data?.capacity, e.data?.length, e.data?.travelTime]),
+  });
 }

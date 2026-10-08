@@ -58,10 +58,12 @@ export default function ResultsBoard({ runs, noiseLabel }: { runs: Runs; noiseLa
       cell: (c) => pct(quality(c)?.chance, c.quantum ? 1 : 0),
     },
     { label: "Valid plans", note: "Every group sent down exactly one route.", cell: (c) => pct(quality(c)?.valid, c.quantum ? 1 : 0) },
+    { label: "__section", cell: () => "x" },
     { label: "Objective score", note: "Lower is better.", cell: (c) => num(c.result.evaluation.energy, 3) },
     { label: "Congestion score", cell: (c) => num(c.result.evaluation.components.congestion, 3) },
     {
       label: "People over capacity",
+      note: "The fewest people who would have to be taken out for every route and exit to fit. Each person is counted once.",
       cell: (c) => {
         const v = c.result.evaluation.people_over_capacity;
         return <span className={v > 0 ? "font-semibold text-wine" : "text-exit"}>{v}</span>;
@@ -92,7 +94,13 @@ export default function ResultsBoard({ runs, noiseLabel }: { runs: Runs; noiseLa
           </tr>
         </thead>
         <tbody>
-          {rows.filter((r) => cols.some((c) => { const v = r.cell(c); return v !== "" && v != null; })).map((r) => (
+          {rows.filter((r) => cols.some((c) => { const v = r.cell(c); return v !== "" && v != null; })).map((r) => r.label === "__section" ? (
+            <tr key="section" className="border-b border-line/70 bg-paper">
+              <th colSpan={cols.length + 1} scope="colgroup" className="px-5 py-2 text-left text-xs font-semibold text-ink-soft">
+                The plan itself. For quantum solvers this is the best of all shots, which is far better than a typical answer.
+              </th>
+            </tr>
+          ) : (
             <tr key={r.label} className="border-b border-line/70 last:border-0 align-top">
               <th scope="row" className="px-5 py-2 text-left font-normal">
                 <span className={r.strong ? "font-semibold" : ""}>{r.label}</span>

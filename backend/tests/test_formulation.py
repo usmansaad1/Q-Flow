@@ -133,3 +133,33 @@ def test_api_round_trip():
     assert body["result"]["evaluation"]["capacity_violations"] == 0
     assert body["baseline"]["evaluation"]["capacity_violations"] > 0
     assert c.post("/api/v1/optimize", json={"preset_id": "micro_hall", "solver": "ibm_hardware"}).status_code == 501
+
+
+def _two_exit_venue(size_a, size_b, gate_a_cap, gate_b_cap, corridor_cap):
+    """Zone A reaches Gate A only through a corridor; zone B goes straight to Gate B."""
+    v = Venue("over")
+    v.add_location("A", "zone").add_location("B", "zone").add_location("Corridor", "corridor")
+    v.add_location("Gate A", "exit", capacity=gate_a_cap).add_location("Gate B", "exit", capacity=gate_b_cap)
+    v.add_route("A", "Corridor", capacity=corridor_cap, length=5).add_route("Corridor", "Gate A", capacity=10_000, length=5)
+    v.add_route("B", "Gate B", capacity=10_000, length=5)
+    v.add_group("ga", "A", size_a).add_group("gb", "B", size_b)
+    p = RoutingProblem(v, paths_per_group=1)
+    return p.evaluate([1, 1])
+
+
+def test_people_over_capacity_counts_the_same_people_once():
+    # 780 people through a 500 corridor to a 500 gate: the same 280 people are too many twice.
+    ev = _two_exit_venue(780, 10, gate_a_cap=500, gate_b_cap=100, corridor_cap=500)
+    assert ev.people_over_capacity == 280
+    assert ev.total_excess == 560
+
+
+def test_people_over_capacity_adds_separate_overloads():
+    # 280 too many at Gate A and, separately, 50 too many at Gate B: different people.
+    ev = _two_exit_venue(780, 150, gate_a_cap=500, gate_b_cap=100, corridor_cap=10_000)
+    assert ev.people_over_capacity == 330
+    assert ev.capacity_violations == 2
+
+
+def test_people_over_capacity_is_zero_when_everything_fits():
+    assert _two_exit_venue(100, 50, 500, 100, 500).people_over_capacity == 0
