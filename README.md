@@ -12,13 +12,13 @@ The aim is not to show quantum winning. Classical methods are expected to stay a
 
 ## Project status
 
-| Stage | Scope | Status |
-|---|---|---|
-| 1 | Venue model, shared optimisation formulation, classical solvers, preset venues, tests | Done |
-| 2 | QAOA on ideal and noisy simulators, quantum quality metrics | Done |
-| 3 | Automated experiments, SQLite storage, CSV and chart export | Done |
-| 4 | Web application: overview, venue lab, experiments dashboard, saved venues | Done |
-| 5 | Real IBM hardware runs, methodology, QAOA and limitations page | Done |
+| Stage |                                   Scope                                               | Status |
+|-------|---------------------------------------------------------------------------------------|--------|
+|   1   | Venue model, shared optimisation formulation, classical solvers, preset venues, tests |  Done  |
+|   2   | QAOA on ideal and noisy simulators, quantum quality metrics                           |  Done  |
+|   3   | Automated experiments, SQLite storage, CSV and chart export                           |  Done  |
+|   4   | Web application: overview, venue lab, experiments dashboard, saved venues             |  Done  |
+|   5   | Real IBM hardware runs, methodology, QAOA and limitations page                        |  Done  |
 
 ---
 
@@ -28,12 +28,12 @@ These come from the default experiment settings and are reproducible with `pytho
 
 **Quantum vs classical at QAOA depth p = 2.** The table shows the probability that a single quantum sample is the optimal plan. The classical exact solver finds it every time.
 
-| Venue | Qubits | Ideal QAOA | Noisy (1x errors) | IBM Torino model | Random guessing |
-|---|---|---|---|---|---|
-| Micro Hall | 4 | 26.0% | 22.1% | 22.9% | 6.2% |
-| Small Event Hall | 6 | 13.4% | 9.2% | 9.4% | 1.6% |
-| Concert Venue | 8 | 6.8% | 4.9% | 4.2% | 0.4% |
-| Exhibition Centre | 10 | 3.4% | 1.7% | 1.5% | 0.1% |
+| Venue             | Qubits | Ideal QAOA | Noisy (1x errors) | IBM Torino model | Random guessing |
+|-------------------|--------|------------|-------------------|------------------|-----------------|
+| Micro Hall        |   4    |    26.0%   |       22.1%       |       22.9%      |      6.2%       |
+| Small Event Hall  |   6    |    13.4%   |       9.2%        |       9.4%       |      1.6%       |
+| Concert Venue     |   8    |    6.8%    |       4.9%        |       4.2%       |      0.4%       |
+| Exhibition Centre |   10   |    3.4%    |       1.7%        |       1.5%       |      0.1%       |
 
 1. **QAOA genuinely works, but does not compete with classical methods.** Every quantum mode beats random guessing, by about 5 times at 4 qubits. At 12 qubits the ideal simulator beats it by about 60 times, and the noisy simulator by about 28 times. Its chance of finding the optimum still falls steadily as problems grow, while the classical exact solver is always optimal and runs in well under a millisecond.
 2. **Ideal QAOA learns the rules more easily than the goal.** Around 96% to 98% of ideal samples are valid plans, but far fewer are optimal. The penalty that enforces "one route per group" dominates the energy landscape, which is a known QAOA limitation.
@@ -75,52 +75,199 @@ The key design rule: **every solver works on exactly the same problem and every 
 
 ## Getting started
 
-### Requirements
+This section takes you from a fresh computer to a running app. Steps 1 to 6 are done once. Step 7 is what you do every time you work on the project.
 
-* Python 3.10 or newer
-* Node.js 20.9 or newer
-* Git
+### 1. Install the requirements
 
-### Backend
+| Tool    | Version                        | Check with         |
+|---------|--------------------------------|--------------------|
+| Python  | 3.12 or newer (tested on 3.13) | `python --version` |
+| Node.js | 20.9 or newer (includes npm)   | `node --version`   |
+| Git     | any recent version             | `git --version`    |
+
+An IBM Cloud account is only needed for real quantum hardware runs (step 4). Everything else works without one.
+
+On Windows, tick "Add Python to PATH" when installing Python. NumPy and SciPy in this project need Python 
+3.12 or newer, so `pip install` fails on older versions.
+
+### 2. Get the code
+Make a Q-flow named folder. Open it in cmd then
+
+```bash
+git clone <repository url> .
+```
+
+The project has two parts, each with its own folder and its own terminal:
+
+* `backend`: the Python optimisation engine and API (FastAPI, Qiskit, OR-Tools)
+* `frontend`: the web app (Next.js)
+
+### 3. Set up the backend
+
+Open a terminal in the project folder:
 
 ```bash
 cd backend
 python -m venv venv
-venv\Scripts\activate             # Windows
-# source venv/bin/activate        # macOS or Linux
-pip install -r requirements.txt
-
-python -m pytest -q tests          # all tests should pass
-uvicorn app.main:app --reload      # API at http://127.0.0.1:8000
 ```
 
-Interactive API documentation is available at `http://127.0.0.1:8000/docs` while the backend runs.
+This creates a `venv` folder inside `backend` that holds a private copy of Python and every package the project needs, separate from the rest of your computer. It is listed in `.gitignore`, so it is never committed. Everyone who clones the project creates their own.
 
-On Windows PowerShell, if activation fails with "running scripts is disabled", run this once and try again:
+* **macOS or Linux:** use `python3 -m venv venv` if `python` is not found.
+* **Several Python versions installed:** create the folder with a 3.12 or newer version explicitly, for example `py -3.13 -m venv venv` on Windows or `python3.13 -m venv venv` on macOS or Linux.
+* **Starting over:** if the `venv` folder breaks or was made with the wrong Python version, delete the folder and run the command again, then reinstall the packages below.
+
+Activate the virtual environment. This must be done in every new terminal before running backend commands:
+
+| System                 | Command                     |
+|------------------------|-----------------------------|
+| Windows PowerShell     | `venv\Scripts\activate`     |
+| Windows Command Prompt | `venv\Scripts\activate.bat` |
+| macOS or Linux         | `source venv/bin/activate`  |
+
+When it is active, the prompt starts with `(venv)`. On Windows PowerShell, if activation fails with "running scripts is disabled", run this once and try again:
 
 ```powershell
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
-### Frontend
+Install the packages and run the tests:
 
-With the backend running, open a second terminal:
+```bash
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+python -m pytest -q tests
+```
+
+`requirements.txt` lists every backend package with its exact version, so this one command installs everything: FastAPI, Qiskit and its simulators, OR-Tools, SciPy and the rest. Packages go into the `venv` folder, not your main Python.
+
+The first install downloads Qiskit, Qiskit Aer and OR-Tools, so it can take several minutes. All 78 tests should pass.
+
+### 4. Connect IBM Quantum (optional)
+
+Skip this step if you only need the classical solvers and the simulators. The IBM option in the Lab then shows "not connected" and stays disabled.
+
+1. Sign in at `cloud.ibm.com`. Open **Resource list**, find your Quantum instance under **Compute**, open it and copy its **CRN** (it starts with `crn:v1:`). If there is no instance, create one from the catalog by searching for "Quantum Computing" and choosing the free Open plan.
+2. Go to **Manage**, then **Access (IAM)**, then **API keys**, and select **Create**. Copy the key from the box that appears before closing it, because IBM shows it only once. A real key is one block of letters and numbers, about 44 characters long. A 36 character value with dashes in an 8, 4, 4, 4 pattern is the key's ID, not the key.
+3. In the `backend` folder, copy the example file to a new file called `.env`:
+
+   ```bash
+   copy .env.example .env      # Windows
+   cp .env.example .env        # macOS or Linux
+   ```
+
+4. Open `backend/.env` and fill in both values, with no quotes and no spaces around `=`:
+
+   ```
+   QFLOW_IBM_TOKEN=your API key
+   QFLOW_IBM_CRN=your CRN
+   ```
+
+5. Check the two values without starting the app. With the virtual environment active, from the `backend` folder:
+
+   ```bash
+   python -c "import os; from dotenv import load_dotenv; load_dotenv('.env'); from qiskit_ibm_runtime import QiskitRuntimeService as S; S(channel='ibm_cloud', token=os.environ['QFLOW_IBM_TOKEN'], instance=os.environ['QFLOW_IBM_CRN']); print('OK')"
+   ```
+
+   It prints `OK` when IBM accepts them. It never prints the key.
+
+`backend/.env` is listed in `.gitignore`, so git will not commit it. Never paste the key into code, chat or a commit. If it is ever shared by mistake, delete it in IBM Cloud and create a new one.
+
+### 5. Set up the frontend
+
+Open a second terminal in the project folder:
 
 ```bash
 cd frontend
 npm install
-npm run dev                        # http://localhost:3000
 ```
 
-Both terminals need to stay open while using the app.
+The frontend expects the backend at `http://127.0.0.1:8000`. To use a different address, create `frontend/.env.local` containing `NEXT_PUBLIC_API_URL=http://your-address:port`.
+
+### 6. Start the app for the first time
+
+**Terminal 1, backend** (from `backend`, virtual environment active):
+
+```bash
+uvicorn app.main:app --port 8000
+```
+
+The first start takes up to a minute while Qiskit loads. It is ready when the terminal shows `Application startup complete`. Interactive API documentation is then at `http://127.0.0.1:8000/docs`.
+
+**Terminal 2, frontend** (from `frontend`):
+
+```bash
+npm run dev
+```
+
+Open `http://localhost:3000`. Both terminals must stay open while you use the app.
+
+To check everything works:
+
+1. The Overview page shows the concert venue map with numbers on the right.
+2. In **Venue lab**, load **Micro Hall** and press **Run all**. Classical, QAOA simulator and Noisy QAOA columns appear in the comparison.
+3. If you did step 4, choose **IBM quantum hardware** and press **Check circuit**. It reports a device, its gate count and its queue, and sends nothing to IBM.
+
+### 7. Every time you work on the project
+
+```bash
+# Terminal 1
+cd backend
+venv\Scripts\activate          # or: source venv/bin/activate
+uvicorn app.main:app --port 8000
+
+# Terminal 2
+cd frontend
+npm run dev
+```
+
+`--reload` restarts the backend whenever a backend file changes, which also stops any experiment or hardware job it is waiting on. Leave it out (`uvicorn app.main:app --port 8000`) when running full experiments or real hardware jobs.
+
+To run the faster production build of the frontend instead of `npm run dev`:
+
+```bash
+npm run build
+npm start
+```
+
+### After pulling new code
+
+```bash
+cd backend
+pip install -r requirements.txt    # virtual environment active
+cd ../frontend
+npm install
+```
+
+Then restart both terminals. Update every file from the same version: mixing old and new files is the usual cause of errors after an update.
 
 ### Configuration
 
 | Variable | Where | Default | Purpose |
 |---|---|---|---|
-| `NEXT_PUBLIC_API_URL` | `frontend/.env.local` | `http://127.0.0.1:8000` | Backend address used by the web app |
+| `QFLOW_IBM_TOKEN` | `backend/.env` | none | IBM Cloud API key, needed only for real hardware |
+| `QFLOW_IBM_CRN` | `backend/.env` | none | CRN of the IBM Quantum instance |
+| `QFLOW_IBM_CHANNEL` | `backend/.env` | `ibm_cloud` | IBM connection channel. Leave unset. |
 | `QFLOW_DB` | backend environment | `backend/data/qflow.db` | SQLite database location |
 | `QFLOW_RESULTS` | backend environment | `backend/results` | Where experiment CSVs and charts are exported |
+
+
+Values set in the terminal take priority over `backend/.env`.
+
+### Troubleshooting
+
+| What you see | Cause and fix |
+|---|---|
+| "Can't reach the Q-Flow backend" in the app | The backend is not running, or is still starting. Start it in terminal 1 and wait for `Application startup complete`. |
+| `No module named ...` (for example `dotenv` or `qiskit`) | The virtual environment is not active, or packages are missing. Activate it, then run `pip install -r requirements.txt`. |
+| "running scripts is disabled on this system" | Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once in PowerShell. |
+| `Address already in use` or port 8000 / 3000 busy | Another copy is already running. Close the other terminal, or start on another port (`--port 8001`, then set `NEXT_PUBLIC_API_URL` to match). |
+| `500 Internal Server Error` right after updating files | Some files are from an older version. Update every file from the same version and restart the backend. |
+| "IBM hardware is not connected" | `backend/.env` was not found or is incomplete. Check it is inside `backend`, named exactly `.env` (not `.env.txt`), and restart the backend. |
+| "Could not sign in to IBM Quantum ... Provided API key could not be found" | The value is not a valid key, most often the key's ID. Create a new key in IBM Cloud and copy the value shown at creation. |
+| "Could not sign in to IBM Quantum ... Unable to retrieve instances" | The key and the CRN belong to different accounts, or the key cannot see the instance. Use a key and CRN from the same account. |
+| An experiment shows "Interrupted" | The backend restarted while it ran. Delete it and run it again, without `--reload`. |
+| A hardware run never finishes | Check the queue on the IBM Quantum dashboard. Keep the Lab page open: the result is saved when the page sees the job finish. |
 
 ---
 
