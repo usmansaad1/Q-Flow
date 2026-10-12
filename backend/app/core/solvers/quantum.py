@@ -124,9 +124,13 @@ def analyse_distribution(problem: RoutingProblem, probs: np.ndarray, shots: int 
 
     e_opt = reference.extra["optimal_energy"]
     e_worst = reference.extra["worst_feasible_energy"]
-    span = (e_worst - e_opt) or 1.0
+    span = e_worst - e_opt
     optimal = np.isclose(energies, e_opt, atol=1e-9) & feasible
-    ratio = np.where(feasible, np.clip((e_worst - energies) / span, 0, 1), 0.0)
+    if span > 1e-12:
+        ratio = np.where(feasible, np.clip((e_worst - energies) / span, 0, 1), 0.0)
+    else:
+        # Only one valid plan exists, so every valid answer is the best one (100%).
+        ratio = np.where(feasible, 1.0, 0.0)
 
     support = np.nonzero(probs > 0)[0]
     best_k = int(support[np.argmin(energies[support])])

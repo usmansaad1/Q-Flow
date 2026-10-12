@@ -122,7 +122,8 @@ class RoutingProblem:
             paths = self.venue.candidate_paths(g.location, k=self.paths_per_group, loads=loads,
                                                size=g.size, own=shortest[g.group_id])
             if not paths:
-                raise ValueError(f"Group '{g.group_id}' cannot reach any exit.")
+                raise ValueError(f"{g.location} can't reach any exit. Add a route from it, "
+                                 f"or from a place it connects to, to an exit.")
             idxs = []
             for j, p in enumerate(paths):
                 idx = len(self.options)

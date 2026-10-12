@@ -209,3 +209,26 @@ export interface LabRunDetail extends OptimizeResponse {
   settings: ProblemSettings;
   solver: string;
 }
+
+// ------------------------------------------------------------ IBM hardware (Stage 5)
+export interface HardwareDevice {
+  name: string;
+  num_qubits: number;
+  pending_jobs: number | null;
+}
+
+export interface HardwareCheck {
+  backend: string;
+  pending_jobs: number | null;
+  qubits: number;
+  transpiled: { depth: number; two_qubit_gates: number; [k: string]: unknown };
+}
+
+/** A job while IBM works on it. Once DONE, the response carries the full OptimizeResponse fields. */
+export type HardwareJobState = {
+  job_id: string;
+  status: string; // SUBMITTED, QUEUED, RUNNING, DONE, ERROR, CANCELLED ...
+  backend?: string;
+  queue_position?: number | null;
+  error?: string | null;
+} & Partial<OptimizeResponse>;

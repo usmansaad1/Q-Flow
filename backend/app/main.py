@@ -1,12 +1,12 @@
 """Q-Flow API. The optimisation engine lives in app.core and never imports FastAPI."""
-from dataclasses import asdict
-
+from contextlib import asynccontextmanager
 from dataclasses import asdict as dc_asdict
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
+from app.api.hardware_routes import router as hardware_router
 from app.api.schemas import ExperimentRequest, OptimizeRequest, ProblemRequest, VenueSaveRequest
 from app.core.charts import export_experiment
 from app.core.experiments import CONFIGS, TITLES, quick_config, run_experiment
@@ -17,13 +17,22 @@ from app.core.solvers.base import SolverResult
 from app.core.solvers import CLASSICAL_SOLVERS, QUANTUM_SOLVERS, solve_exact, solve_naive
 from app.core.venue import Venue
 
-app = FastAPI(title="Q-Flow Optimisation Engine", version="0.5.0")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # An experiment left "running" by a previous backend process would otherwise stay
+    # running forever in the app, with its Delete button disabled.
+    Storage().mark_interrupted()
+    yield
+
+
+app = FastAPI(title="Q-Flow Optimisation Engine", version="0.5.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(hardware_router)
 
 
 
@@ -135,7 +144,7 @@ def describe_problem(req: ProblemRequest):
 def optimize(req: OptimizeRequest):
     problem = build_problem(req)
     if req.solver == "ibm_hardware":
-        raise HTTPException(501, "IBM hardware execution arrives in Stage 5.")
+        raise HTTPException(400, "IBM hardware runs are background jobs. Use /api/v1/hardware/jobs instead.")
     q = req.quantum
     try:
         if req.solver == "qaoa_ideal":
@@ -189,6 +198,8 @@ def optimize(req: OptimizeRequest):
     response["result"]["extra"].pop("history", None)  # large and unused by the app
 
     # Every Lab run is recorded (proposal Section 12: "solver results").
+    if not req.record:
+        return response
     q = quality or {}
     run_quality = q.get("mean_approx_ratio", q.get("approximation_ratio"))
     response["run_id"] = get_store().save_lab_run(

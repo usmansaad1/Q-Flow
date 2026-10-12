@@ -62,6 +62,14 @@ CREATE TABLE IF NOT EXISTS runs (
     created_at         TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_runs_experiment ON runs(experiment_id);
+CREATE TABLE IF NOT EXISTS hardware_jobs (
+    job_id      TEXT PRIMARY KEY,
+    backend     TEXT NOT NULL,
+    payload     TEXT NOT NULL,
+    response    TEXT,
+    error       TEXT,
+    created_at  TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS lab_runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     venue_name  TEXT NOT NULL,
@@ -122,6 +130,16 @@ class Storage:
             c.execute("UPDATE experiments SET status = ?, summary = ?, error = ?, finished_at = ? WHERE id = ?",
                       ("failed" if error else "done", json.dumps(summary) if summary else None,
                        error, _now(), exp_id))
+
+    def mark_interrupted(self) -> int:
+        """Experiments still marked running when the backend starts can never finish:
+        the process that ran them has stopped. Mark them failed so they can be deleted."""
+        with self._conn() as c:
+            cur = c.execute("UPDATE experiments SET status = 'failed', error = ?, finished_at = ? "
+                            "WHERE status = 'running'",
+                            ("Interrupted: the backend stopped before this experiment finished. "
+                             "The runs recorded so far are kept.", _now()))
+            return cur.rowcount
 
     def list_experiments(self) -> list[dict]:
         with self._conn() as c:
@@ -226,3 +244,27 @@ class Storage:
     def delete_lab_run(self, run_id: int) -> bool:
         with self._conn() as c:
             return c.execute("DELETE FROM lab_runs WHERE id = ?", (run_id,)).rowcount > 0
+
+    # ------------------------------------------------------- IBM hardware jobs
+    def save_hardware_job(self, job_id: str, backend: str, payload: dict) -> None:
+        with self._conn() as c:
+            c.execute("INSERT INTO hardware_jobs (job_id, backend, payload, created_at) VALUES (?, ?, ?, ?)",
+                      (job_id, backend, json.dumps(payload, default=float), _now()))
+
+    def get_hardware_job(self, job_id: str) -> dict | None:
+        with self._conn() as c:
+            row = c.execute("SELECT * FROM hardware_jobs WHERE job_id = ?", (job_id,)).fetchone()
+        if not row:
+            return None
+        return {"job_id": row["job_id"], "backend": row["backend"],
+                "payload": json.loads(row["payload"]),
+                "response": json.loads(row["response"]) if row["response"] else None,
+                "error": row["error"]}
+
+    def update_hardware_job(self, job_id: str, response: dict | None = None, error: str | None = None) -> None:
+        with self._conn() as c:
+            if response is not None:
+                c.execute("UPDATE hardware_jobs SET response = ? WHERE job_id = ?",
+                          (json.dumps(response, default=float), job_id))
+            if error is not None:
+                c.execute("UPDATE hardware_jobs SET error = ? WHERE job_id = ?", (error, job_id))

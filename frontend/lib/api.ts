@@ -1,6 +1,7 @@
 import type {
   ExperimentDetail, ExperimentInfo, ExperimentKind, OptimizeResponse, PresetInfo,
   ProblemSettings, ProblemSummary, QuantumSettings, SavedVenueSummary, VenueDTO, LabRunSummary, LabRunDetail,
+  HardwareCheck, HardwareDevice, HardwareJobState,
 } from "./types";
 
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
@@ -47,10 +48,11 @@ export const api = {
   deleteVenue: (id: number) => request<void>(`/api/v1/venues/${id}`, { method: "DELETE" }),
   problem: (venue: VenueDTO, settings: ProblemSettings) =>
     request<ProblemSummary>("/api/v1/problem", { method: "POST", body: JSON.stringify({ venue, settings }) }),
-  optimize: (venue: VenueDTO, settings: ProblemSettings, solver: string, quantum?: QuantumSettings) =>
+  /** record = false for display only solves (the Overview demo), which stay out of Run history. */
+  optimize: (venue: VenueDTO, settings: ProblemSettings, solver: string, quantum?: QuantumSettings, record = true) =>
     request<OptimizeResponse>("/api/v1/optimize", {
       method: "POST",
-      body: JSON.stringify({ venue, settings, solver, ...(quantum ? { quantum } : {}) }),
+      body: JSON.stringify({ venue, settings, solver, record, ...(quantum ? { quantum } : {}) }),
     }),
   labRuns: () => request<LabRunSummary[]>("/api/v1/lab-runs"),
   labRun: (id: number) => request<LabRunDetail>(`/api/v1/lab-runs/${id}`),
@@ -63,4 +65,15 @@ export const api = {
     }),
   deleteExperiment: (id: number) => request<void>(`/api/v1/experiments/${id}`, { method: "DELETE" }),
   chartUrl: (id: number) => `${API_URL}/api/v1/experiments/${id}/chart`,
+  // IBM hardware: the backend reads the IBM key from its own environment, never from the browser.
+  hardwareDevices: () => request<HardwareDevice[]>("/api/v1/hardware/devices"),
+  hardwareDryRun: (venue: VenueDTO, settings: ProblemSettings, quantum: QuantumSettings, device: string | null) =>
+    request<HardwareCheck>("/api/v1/hardware/dry-run", {
+      method: "POST", body: JSON.stringify({ venue, settings, quantum, device }),
+    }),
+  hardwareSubmit: (venue: VenueDTO, settings: ProblemSettings, quantum: QuantumSettings, device: string | null) =>
+    request<{ job_id: string; backend: string; status: string }>("/api/v1/hardware/jobs", {
+      method: "POST", body: JSON.stringify({ venue, settings, quantum, device }),
+    }),
+  hardwareJob: (jobId: string) => request<HardwareJobState>(`/api/v1/hardware/jobs/${jobId}`),
 };

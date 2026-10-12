@@ -121,7 +121,8 @@ def make_record(exp_id: int, instance: str, problem: RoutingProblem, method: str
         feasible = result.evaluation["feasible"]
         rec.update(
             prob_optimal=float(is_opt), prob_feasible=float(feasible),
-            mean_approx_ratio=max(0.0, min(1.0, (e_worst - energy) / span)) if feasible else 0.0,
+            mean_approx_ratio=(0.0 if not feasible else 1.0 if e_worst - e_opt < 1e-12
+                               else max(0.0, min(1.0, (e_worst - energy) / span))),
             details={"capacity_violations": result.evaluation["capacity_violations"],
                      "people_over_capacity": result.evaluation["people_over_capacity"],
                      "total_excess": result.evaluation["total_excess"]},

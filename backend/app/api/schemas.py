@@ -73,6 +73,8 @@ class QuantumSettings(BaseModel):
 class OptimizeRequest(ProblemRequest):
     solver: SolverName = "classical_exact"
     quantum: QuantumSettings = QuantumSettings()
+    # False for display only calls (the Overview demo), so they never fill Run history.
+    record: bool = True
 
 
 class ExperimentRequest(BaseModel):

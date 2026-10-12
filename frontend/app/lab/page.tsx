@@ -12,11 +12,12 @@ import { Button } from "@/components/lab/Field";
 import SolverPanel from "@/components/lab/SolverPanel";
 import VenueBar, { type VenueSource } from "@/components/lab/VenueBar";
 import RunHistory from "@/components/lab/RunHistory";
-import { DEVICE_MODELS, QUANTUM_QUBIT_LIMIT, SOLVERS, type SolverKey } from "@/components/lab/solvers";
+import { QUANTUM_QUBIT_LIMIT, SOLVERS, type SolverKey } from "@/components/lab/solvers";
 import { api } from "@/lib/api";
 import { planLoads } from "@/lib/plan";
 import type {
-  LabRunSummary, OptimizeResponse, PresetInfo, ProblemSettings, ProblemSummary, QuantumSettings, SavedVenueSummary, VenueDTO,
+  HardwareCheck, HardwareDevice, HardwareJobState, LabRunSummary, OptimizeResponse, PresetInfo, ProblemSettings,
+  ProblemSummary, QuantumSettings, SavedVenueSummary, VenueDTO,
 } from "@/lib/types";
 import { graphToVenue, newId, venueToGraph, type PlaceNode, type RouteEdge } from "@/lib/venue";
 
@@ -53,10 +54,16 @@ export default function LabPage() {
     { sig: null, runs: {}, shown: null, error: null });
   const [running, setRunning] = useState<SolverKey | null>(null);
   const [bestOfShots, setBestOfShots] = useState(false);
-  const [noiseLabel, setNoiseLabel] = useState("");
   const [problem, setProblem] = useState<{ sig: string | null; summary: ProblemSummary | null; error: string | null }>(
     { sig: null, summary: null, error: null });
   const [apiError, setApiError] = useState<string | null>(null);
+  // IBM hardware state. Checks and devices are per venue or per session; a check only counts for the venue it was made for.
+  const [hwDevices, setHwDevices] = useState<HardwareDevice[]>([]);
+  const [hwLoadError, setHwLoadError] = useState<string | null>(null);
+  const [hwDevice, setHwDevice] = useState("auto");
+  const [hwCheck, setHwCheck] = useState<{ sig: string; data: HardwareCheck } | null>(null);
+  const [hwChecking, setHwChecking] = useState(false);
+  const [hwStatus, setHwStatus] = useState<HardwareJobState | null>(null);
 
   // ------------------------------------------------------------ loading
   const applyVenue = useCallback((v: VenueDTO, src: VenueSource) => {
@@ -275,25 +282,72 @@ export default function LabPage() {
   const qubits = summary?.num_qubits ?? null;
   const blocked = apiError ?? (conversion.errors.length ? conversion.errors[0] : problemError);
 
+  const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
+
+  // Devices for the picker, loaded when the IBM solver is selected.
+  useEffect(() => {
+    if (solver !== "ibm_hardware") return;
+    let alive = true;
+    api.hardwareDevices()
+      .then((d) => { if (alive) { setHwDevices(d); setHwLoadError(null); } })
+      .catch((e) => { if (alive) setHwLoadError((e as Error).message); });
+    return () => { alive = false; };
+  }, [solver]);
+
+  // Dry run: transpiles the circuit for the device and reports its size. Sends nothing to IBM.
+  const checkHardware = async () => {
+    if (!conversion.venue || !signature) return;
+    const sig = signature, venue = conversion.venue;
+    setHwChecking(true);
+    try {
+      const data = await api.hardwareDryRun(venue, settings, quantum, hwDevice === "auto" ? null : hwDevice);
+      setHwCheck({ sig, data });
+    } catch (e) {
+      setResults((r) => (r.sig === sig ? { ...r, error: (e as Error).message } : r));
+    } finally {
+      setHwChecking(false);
+    }
+  };
+
+  // IBM runs wait in a queue, so the job is submitted once and then checked every 3 seconds.
+  const runOnHardware = async (sig: string, venue: VenueDTO) => {
+    const sent = await api.hardwareSubmit(venue, settings, quantum, hwDevice === "auto" ? null : hwDevice);
+    setHwStatus({ job_id: sent.job_id, status: "SUBMITTED", backend: sent.backend });
+    for (;;) {
+      await sleep(3000);
+      const job = await api.hardwareJob(sent.job_id);
+      if (job.status === "DONE") {
+        const resp = job as OptimizeResponse;
+        setResults((r) => (r.sig === sig ? { ...r, runs: { ...r.runs, ibm_hardware: resp }, shown: "ibm_hardware" } : r));
+        refreshHistory();
+        return;
+      }
+      if (job.status === "ERROR" || job.status === "CANCELLED") {
+        throw new Error(job.error ?? `IBM reported the job as ${job.status.toLowerCase()}.`);
+      }
+      setHwStatus(job);
+    }
+  };
+
   const run = async (key: SolverKey) => {
     if (!conversion.venue || !signature) return;
-    const sig = signature;
+    const sig = signature, venue = conversion.venue;
     setRunning(key);
     setResults((r) => (r.sig === sig ? { ...r, error: null } : { sig, runs: {}, shown: null, error: null }));
     try {
-      const isQuantum = SOLVERS.find((s) => s.key === key)!.quantum;
-      const resp = await api.optimize(conversion.venue, settings, key, isQuantum ? quantum : undefined);
-      if (key === "qaoa_noisy") {
-        setNoiseLabel(quantum.noise === "depolarizing"
-          ? `${quantum.noise_level}x errors`
-          : DEVICE_MODELS.find((d) => d.value === quantum.fake_backend)?.label.split(" (")[0] ?? quantum.fake_backend);
+      if (key === "ibm_hardware") {
+        await runOnHardware(sig, venue);
+      } else {
+        const isQuantum = SOLVERS.find((s) => s.key === key)!.quantum;
+        const resp = await api.optimize(venue, settings, key, isQuantum ? quantum : undefined);
+        setResults((r) => r.sig === sig ? { ...r, runs: { ...r.runs, [key]: resp }, shown: key } : r);
+        refreshHistory();
       }
-      setResults((r) => r.sig === sig ? { ...r, runs: { ...r.runs, [key]: resp }, shown: key } : r);
-      refreshHistory();
     } catch (e) {
       setResults((r) => (r.sig === sig ? { ...r, error: (e as Error).message } : r));
     } finally {
       setRunning(null);
+      setHwStatus(null);
     }
   };
 
@@ -309,6 +363,18 @@ export default function LabPage() {
       const r = await api.labRun(id);
       pendingRestore.current = { solver: r.solver as SolverKey, resp: r };
       setSettings(r.settings);
+      // Quantum runs: put the side panel back to the settings that run used.
+      const cfg = r.result.extra.config as Partial<QuantumSettings> | undefined;
+      if (cfg) {
+        setQuantum((q) => ({
+          ...q,
+          reps: cfg.reps ?? q.reps, shots: cfg.shots ?? q.shots, seed: cfg.seed ?? q.seed,
+          ...(r.solver === "qaoa_noisy" ? {
+            noise: cfg.noise ?? q.noise, noise_level: cfg.noise_level ?? q.noise_level, fake_backend: cfg.fake_backend ?? q.fake_backend,
+          } : {}),
+        }));
+      }
+      setSolver(r.solver as SolverKey);
       applyVenue(r.venue, { kind: "new" });
       flash("ok", `Opened run #${id}. Its results are shown below.`);
     } catch (e) {
@@ -406,7 +472,7 @@ export default function LabPage() {
 
           {runError && <p className="rounded-[3px] border border-wine/40 bg-white px-4 py-3 text-sm text-wine">{runError}</p>}
 
-          <ResultsBoard runs={runs} noiseLabel={noiseLabel} />
+          <ResultsBoard runs={runs} />
 
           {shownResult && (
             <section className="rounded-[4px] border border-line bg-panel p-4">
@@ -429,7 +495,10 @@ export default function LabPage() {
           <section className="rounded-[4px] border border-line bg-panel p-4">
             <SolverPanel selected={solver} onSelect={setSolver} settings={settings} onSettings={setSettings}
               quantum={quantum} onQuantum={setQuantum} qubits={qubits} blocked={blocked} running={running}
-              onRun={run} onRunAll={runAll} />
+              onRun={run} onRunAll={runAll}
+              hw={{ devices: hwDevices, device: hwDevice, onDevice: setHwDevice,
+                    check: hwCheck && hwCheck.sig === signature ? hwCheck.data : null, checking: hwChecking,
+                    onCheck: checkHardware, status: hwStatus, error: hwLoadError }} />
           </section>
         </aside>
       </div>

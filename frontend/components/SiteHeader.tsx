@@ -7,20 +7,22 @@ const LINKS = [
   { href: "/", label: "Overview" },
   { href: "/lab", label: "Venue lab" },
   { href: "/experiments", label: "Experiments" },
+  { href: "/methodology", label: "Methodology" },
 ];
 
 export default function SiteHeader() {
   const path = usePathname();
   return (
     <header className="border-b border-line bg-panel">
-      <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-8 px-5">
-        <Link href="/" className="flex items-center" aria-label="Q-Flow home">
+      <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-4 px-4 sm:gap-8 sm:px-5">
+        <Link href="/" className="flex shrink-0 items-center" aria-label="Q-Flow home">
           {/* Styled after an exit sign: white condensed lettering on safety green. */}
           <span className="rounded-[2px] bg-exit px-2.5 py-0.5 font-display text-lg font-bold tracking-wide text-white">
             Q-Flow
           </span>
         </Link>
-        <nav className="flex h-full items-stretch gap-6 text-sm">
+        {/* Scrolls sideways on narrow phones instead of widening the page. */}
+        <nav className="flex h-full min-w-0 items-stretch gap-4 overflow-x-auto whitespace-nowrap text-sm sm:gap-6">
           {LINKS.map((l) => {
             const active = l.href === "/" ? path === "/" : path.startsWith(l.href);
             return (

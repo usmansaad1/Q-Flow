@@ -4,7 +4,7 @@ Q-Flow is an experimental platform that asks a practical question:
 
 > **To what extent can current quantum optimisation techniques provide useful solutions to simplified crowd flow planning problems when compared with classical optimisation methods?**
 
-A venue is modelled as a network of areas, routes and exits. Q-Flow decides which route each crowd group should take so that no route or exit is overloaded, while keeping walking distances short. The same problem is solved with classical optimisation and with the Quantum Approximate Optimisation Algorithm (QAOA) using IBM's Qiskit, on an ideal simulator, a noisy simulator and, in Stage 5, real IBM quantum hardware.
+A venue is modelled as a network of areas, routes and exits. Q-Flow decides which route each crowd group should take so that no route or exit is overloaded, while keeping walking distances short. The same problem is solved with classical optimisation and with the Quantum Approximate Optimisation Algorithm (QAOA) using IBM's Qiskit, on an ideal simulator, a noisy simulator and real IBM quantum hardware.
 
 The aim is not to show quantum winning. Classical methods are expected to stay ahead. The aim is to **measure by how much**, and how that gap changes with problem size, hardware noise and circuit depth.
 
@@ -18,7 +18,7 @@ The aim is not to show quantum winning. Classical methods are expected to stay a
 | 2 | QAOA on ideal and noisy simulators, quantum quality metrics | Done |
 | 3 | Automated experiments, SQLite storage, CSV and chart export | Done |
 | 4 | Web application: overview, venue lab, experiments dashboard, saved venues | Done |
-| 5 | Real IBM hardware runs, methodology and limitations pages, demo scenarios | Next |
+| 5 | Real IBM hardware runs, methodology, QAOA and limitations page | Done |
 
 ---
 
@@ -35,11 +35,11 @@ These come from the default experiment settings and are reproducible with `pytho
 | Concert Venue | 8 | 6.8% | 4.9% | 4.2% | 0.4% |
 | Exhibition Centre | 10 | 3.4% | 1.7% | 1.5% | 0.1% |
 
-1. **QAOA genuinely works, but does not compete with classical methods.** Every quantum mode beats random guessing, by about 5 times at 4 qubits and about 60 times at 12 qubits. Its chance of finding the optimum still falls steadily as problems grow, while the classical exact solver is always optimal and runs in well under a millisecond.
+1. **QAOA genuinely works, but does not compete with classical methods.** Every quantum mode beats random guessing, by about 5 times at 4 qubits. At 12 qubits the ideal simulator beats it by about 60 times, and the noisy simulator by about 28 times. Its chance of finding the optimum still falls steadily as problems grow, while the classical exact solver is always optimal and runs in well under a millisecond.
 2. **Ideal QAOA learns the rules more easily than the goal.** Around 96% to 98% of ideal samples are valid plans, but far fewer are optimal. The penalty that enforces "one route per group" dominates the energy landscape, which is a known QAOA limitation.
 3. **Noise mainly destroys validity.** On the 10 qubit venue, valid plans fall from 96% (ideal) to about 45% (IBM Torino noise model).
 4. **Real chip layouts add cost.** Routing a circuit onto a real IBM qubit layout more than doubles its two qubit gates (88 become 205 on the Exhibition Centre).
-5. **Newer hardware does measurably better.** The noise model of IBM's newer Torino processor beat the older Brisbane on every venue.
+5. **Newer hardware does better overall.** The noise model of IBM's newer Torino processor beat the older Brisbane on most measures, although the two tied on the chance of the best plan for two venues.
 6. **Depth helps in theory and hurts in practice.** Without noise, deeper circuits keep improving. With noise, quality peaks at p = 2 and then declines on every venue larger than Micro Hall, because each extra layer adds more errors than accuracy. This is the clearest picture of the boundary between theoretical and practical usefulness.
 
 ---
@@ -60,7 +60,7 @@ One shared optimisation problem (QUBO): one binary variable per group and route 
         ├── Classical CP SAT: Google OR Tools solver for larger problems
         ├── QAOA ideal: perfect quantum simulation (Qiskit Aer)
         ├── QAOA noisy: simulated hardware errors or calibrated IBM device models
-        └── IBM hardware (Stage 5)
+        └── IBM hardware: real IBM processors through Qiskit IBM Runtime
         │
         ▼
 One shared evaluator scores every answer the same way
@@ -157,7 +157,7 @@ Each area with people becomes one crowd group, or several if split. The counter 
 
 **Solving**
 
-Choose a solver (Classical, QAOA simulator, Noisy QAOA, or IBM hardware once Stage 5 is complete) and press **Run**, or press **Run all** to fill the full comparison.
+Choose a solver (Classical, QAOA simulator, Noisy QAOA, or IBM hardware) and press **Run**, or press **Run all** to fill the full comparison.
 
 * Quantum settings: QAOA depth p, number of shots, and for noisy runs either an adjustable error rate or a real IBM device model (Torino, Fez, Brisbane, Sherbrooke).
 * **Optimisation priorities** adjusts the weight of congestion, capacity overflow, walking distance and travel time, and how many routes are considered per group.
@@ -190,6 +190,10 @@ Runs the four experiments from the proposal in the background and stores every r
 * **Quick run** uses small settings for a fast check. **Full run** produces the data for the report.
 * The page updates itself while an experiment runs.
 * Each experiment has interactive charts, a **Download runs (CSV)** button, a **Report chart (PNG)** for documents, and a full history.
+
+### Methodology (`/methodology`)
+
+Explains the study for clients and reviewers: the research question, how a venue becomes a QUBO, the score and its weights, the classical solvers, how QAOA works step by step, the three quantum execution modes, how each result is measured, the first real hardware results, and the limitations of the model and of current quantum hardware.
 
 ---
 
@@ -246,7 +250,7 @@ A penalty term enforces exactly one route per group.
 | Classical CP SAT | `classical_cpsat` | Google OR Tools constraint solver on the same objective, for problems too large to enumerate |
 | QAOA ideal | `qaoa_ideal` | QAOA on a perfect simulator |
 | QAOA noisy | `qaoa_noisy` | QAOA with simulated hardware errors |
-| IBM hardware | `ibm_hardware` | Real IBM processor (Stage 5) |
+| IBM hardware | `ibm_hardware` | Real IBM processor, run as a background job through `/api/v1/hardware` |
 
 ### How QAOA is run
 
@@ -357,7 +361,7 @@ q-flow/
 │   │   ├── api/schemas.py         request models
 │   │   └── main.py                FastAPI routes
 │   ├── scripts/                   command line tools
-│   ├── tests/                     71 automated tests
+│   ├── tests/                     78 automated tests
 │   ├── results/                   exported experiment evidence
 │   └── requirements.txt
 ├── frontend/
@@ -377,7 +381,7 @@ cd backend
 python -m pytest -q tests
 ```
 
-The 71 tests check the guarantees every comparison depends on:
+The 78 tests check the guarantees every comparison depends on:
 
 * The lowest energy answer is always the best valid plan, checked against every possible answer.
 * Every invalid answer scores worse than the optimum.
@@ -427,9 +431,46 @@ npm run build
 
 ---
 
-## Next: Stage 5
+## Stage 5: real IBM hardware
 
-* Run small problems on real IBM quantum processors through Qiskit IBM Runtime, with parameters transferred from the ideal simulator.
-* Add hardware results alongside the simulator results in the comparison table and experiments.
-* Add methodology, QAOA explanation and limitations pages to the web application.
-* Prepare demonstration scenarios for the walkthrough video.
+### Connecting an IBM account
+
+The backend reads the IBM credentials from `backend/.env`, which git ignores. Copy `backend/.env.example` to `backend/.env` and fill in:
+
+```
+QFLOW_IBM_TOKEN=your IBM Cloud API key
+QFLOW_IBM_CRN=the CRN of your Quantum instance (starts with crn:v1:)
+```
+
+The API key comes from IBM Cloud, under Manage, then Access (IAM), then API keys. Its value is shown only once, when it is created. The CRN is on the Quantum instance's details page, listed under Compute in the Resource list. Values set in the terminal take priority over the file. Never commit the key.
+
+Restart the backend, then open `http://127.0.0.1:8000/api/v1/hardware/devices`. A list of devices means the connection works.
+
+### Running on hardware
+
+In the Lab, choose **IBM quantum hardware**, pick a device (or Automatic for the shortest queue) and press **Check circuit**. This adapts the circuit to the device and reports its two qubit gates and depth without sending anything or using quota. **Run** then trains the QAOA angles on the ideal simulator, sends one job to IBM and checks on it every 3 seconds. Keep the page open until the result appears; it is then saved to Run history like any other run.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/v1/hardware/devices` | Devices available to the account, with queue length |
+| `POST /api/v1/hardware/dry-run` | Adapt the circuit to a device and report its size. Sends nothing. |
+| `POST /api/v1/hardware/jobs` | Submit a job. Returns its job id. |
+| `GET /api/v1/hardware/jobs/{job_id}` | Job status, then the full result once IBM finishes |
+
+### First hardware results
+
+ibm_fez, QAOA depth 2, 4,096 shots, one run per size, recorded 9 October 2026. Typical answer quality:
+
+| Qubits | Venue | Ideal | Noisy (1x) | IBM hardware | Best plan (hardware) | Random guess | Valid plans (hardware) | Two qubit gates (hardware) |
+|---|---|---|---|---|---|---|---|---|
+| 4 | Micro Hall | 66% | 56% | 62% | 24.9% | 6.3% | 88.9% | 25 |
+| 6 | Small Event Hall | 73% | 54% | 57% | 9.4% | 1.6% | 76.2% | 69 |
+| 8 | Concert Venue | 63% | 42% | 46% | 4.7% | 0.4% | 72.2% | not recorded |
+| 10 | Exhibition Centre | 61% | 32% | 23% | 1.4% | 0.1% | 38.9% | 211 |
+
+Hardware quality falls steadily with size, mainly because two qubit gates grow once the circuit is fitted to the chip. The real device did better than the 1x noise model at 4 qubits and worse at 10. These are single runs, so repeat them before quoting averages. The Methodology page in the app explains the method, how QAOA works and the limitations of the study.
+
+### Still open
+
+* Repeat each hardware size to report averages, and compare QAOA depth 1 with depth 2 on hardware.
+* Record the demonstration video.

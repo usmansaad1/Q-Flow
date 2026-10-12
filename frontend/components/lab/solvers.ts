@@ -7,8 +7,8 @@ export const SOLVERS: { key: SolverKey; label: string; short: string; descriptio
     description: "QAOA on a perfect, error free quantum simulator." },
   { key: "qaoa_noisy", label: "Noisy QAOA", short: "QAOA noisy", quantum: true, available: true,
     description: "The same circuit with the errors of today's hardware." },
-  { key: "ibm_hardware", label: "IBM quantum hardware", short: "IBM QPU", quantum: true, available: false,
-    description: "A real IBM processor. Arrives in Stage 5." },
+  { key: "ibm_hardware", label: "IBM quantum hardware", short: "IBM QPU", quantum: true, available: true,
+    description: "A real IBM processor. Jobs wait in IBM's queue, so a run can take minutes or more." },
 ];
 
 export const DEVICE_MODELS = [

@@ -2,7 +2,7 @@
 
 import { pct, num, seconds } from "@/lib/format";
 import type { OptimizeResponse, SolverResultDTO } from "@/lib/types";
-import { SOLVERS, type SolverKey } from "./solvers";
+import { DEVICE_MODELS, SOLVERS, type SolverKey } from "./solvers";
 
 type Runs = Partial<Record<SolverKey, OptimizeResponse>>;
 
@@ -24,7 +24,17 @@ function quality(c: Column) {
     : { typical: q.approximation_ratio, chance: q.is_optimal ? 1 : 0, valid: 1 };
 }
 
-export default function ResultsBoard({ runs, noiseLabel }: { runs: Runs; noiseLabel: string }) {
+/** Noise setting a noisy run actually used, read from the run itself so a reopened run is labelled correctly. */
+function noiseLabel(resp: OptimizeResponse): string {
+  const cfg = resp.result.extra.config as { noise?: string; noise_level?: number; fake_backend?: string } | undefined;
+  if (!cfg) return "";
+  if (cfg.noise === "fake_backend") {
+    return DEVICE_MODELS.find((d) => d.value === cfg.fake_backend)?.label.split(" (")[0] ?? cfg.fake_backend ?? "";
+  }
+  return `${cfg.noise_level}x errors`;
+}
+
+export default function ResultsBoard({ runs }: { runs: Runs }) {
   const keys = SOLVERS.map((s) => s.key).filter((k) => runs[k]);
   if (!keys.length) {
     return (
@@ -41,7 +51,10 @@ export default function ResultsBoard({ runs, noiseLabel }: { runs: Runs; noiseLa
     { key: "baseline", label: "Nearest exit", quantum: false, result: first.baseline, resp: first, baseline: true },
     ...keys.map((k) => {
       const s = SOLVERS.find((x) => x.key === k)!;
-      return { key: k, label: k === "qaoa_noisy" ? `Noisy QAOA (${noiseLabel})` : s.label, quantum: s.quantum, result: runs[k]!.result, resp: runs[k]! };
+      const label = k === "qaoa_noisy" ? `Noisy QAOA (${noiseLabel(runs[k]!)})`
+        : k === "ibm_hardware" ? `IBM hardware (${String(runs[k]!.result.extra.backend ?? "device")})`
+        : s.label;
+      return { key: k, label, quantum: s.quantum, result: runs[k]!.result, resp: runs[k]! };
     }),
   ];
   const random = keys.map((k) => runs[k]!.quality?.random_baseline).find(Boolean);

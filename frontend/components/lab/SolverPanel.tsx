@@ -1,8 +1,20 @@
 "use client";
 
-import type { ProblemSettings, QuantumSettings } from "@/lib/types";
+import type { HardwareCheck, HardwareDevice, HardwareJobState, ProblemSettings, QuantumSettings } from "@/lib/types";
 import { Button, Field, Select, Slider } from "./Field";
 import { DEVICE_MODELS, QUANTUM_QUBIT_LIMIT, SOLVERS, type SolverKey } from "./solvers";
+
+/** IBM hardware controls. Everything here is decided by the page; the panel only shows and asks. */
+export interface HardwareUi {
+  devices: HardwareDevice[];
+  device: string;                 // "auto" or a device name
+  onDevice: (d: string) => void;
+  check: HardwareCheck | null;    // result of the last dry run for this venue
+  checking: boolean;
+  onCheck: () => void;
+  status: HardwareJobState | null; // the job while IBM works on it
+  error: string | null;           // set when IBM is not connected or cannot be reached
+}
 
 interface Props {
   selected: SolverKey;
@@ -16,6 +28,16 @@ interface Props {
   running: SolverKey | null;
   onRun: (k: SolverKey) => void;
   onRunAll: () => void;
+  hw: HardwareUi;
+}
+
+function hardwareStatus(s: HardwareJobState | null): string {
+  if (!s || s.status === "SUBMITTED") return "Sending the job to IBM.";
+  if (s.status === "QUEUED") {
+    return `Waiting in the IBM queue${s.queue_position ? ` (position ${s.queue_position})` : ""}. Queues can take minutes or hours.`;
+  }
+  if (s.status === "RUNNING") return "Running on the IBM processor now.";
+  return `IBM status: ${s.status.toLowerCase()}.`;
 }
 
 export default function SolverPanel(p: Props) {
@@ -23,6 +45,14 @@ export default function SolverPanel(p: Props) {
   const sel = SOLVERS.find((s) => s.key === p.selected)!;
   const w = p.settings.weights;
   const setW = (k: keyof typeof w, v: number) => p.onSettings({ ...p.settings, weights: { ...w, [k]: v } });
+  const isHardware = p.selected === "ibm_hardware";
+  const hwBlocked = isHardware && !!p.hw.error;
+  const deviceOptions = [
+    { value: "auto", label: "Automatic (shortest queue)" },
+    ...p.hw.devices.map((d) => ({
+      value: d.name, label: `${d.name}, ${d.num_qubits} qubits, ${d.pending_jobs ?? "?"} jobs waiting`,
+    })),
+  ];
 
   return (
     <div className="space-y-4">
@@ -84,6 +114,27 @@ export default function SolverPanel(p: Props) {
               )}
             </>
           )}
+          {isHardware && (
+            <>
+              <Field label="Device" hint="Automatic picks the shortest queue among devices with enough qubits.">
+                <Select<string> value={p.hw.device} options={deviceOptions} onChange={p.hw.onDevice} />
+              </Field>
+              <Button className="w-full" disabled={!!p.blocked || !!p.running || hwBlocked || p.hw.checking}
+                onClick={p.hw.onCheck}
+                title="Builds the circuit for the device and reports its size. Sends nothing to IBM.">
+                {p.hw.checking ? "Checking…" : "Check circuit (sends nothing to IBM)"}
+              </Button>
+              {p.hw.check && (
+                <p className="text-xs text-ink-soft">
+                  {p.hw.check.backend}: {p.hw.check.transpiled.two_qubit_gates} two qubit gates, depth {p.hw.check.transpiled.depth},
+                  {" "}{p.hw.check.pending_jobs ?? "an unknown number of"} jobs already waiting. Nothing was sent.
+                </p>
+              )}
+              <p className="text-xs text-ink-soft">
+                Each real run uses IBM quota and waits in a queue. Check the circuit first.
+              </p>
+            </>
+          )}
         </div>
       )}
 
@@ -103,7 +154,8 @@ export default function SolverPanel(p: Props) {
       </details>
 
       <div className="flex gap-2 border-t border-line pt-3">
-        <Button variant="primary" className="flex-1" disabled={!!p.blocked || !!p.running || !sel.available || (sel.quantum && tooBig)}
+        <Button variant="primary" className="flex-1"
+          disabled={!!p.blocked || !!p.running || !sel.available || (sel.quantum && tooBig) || hwBlocked}
           onClick={() => p.onRun(p.selected)}>
           {p.running === p.selected ? "Running…" : `Run ${sel.label}`}
         </Button>
@@ -112,7 +164,10 @@ export default function SolverPanel(p: Props) {
         </Button>
       </div>
       {p.blocked && <p className="text-xs text-wine">{p.blocked}</p>}
-      {p.running && SOLVERS.find((s) => s.key === p.running)?.quantum && (
+      {hwBlocked && <p className="text-xs text-wine">{p.hw.error}</p>}
+      {p.running === "ibm_hardware" ? (
+        <p className="text-xs text-ink-soft" role="status">{hardwareStatus(p.hw.status)}</p>
+      ) : p.running && SOLVERS.find((s) => s.key === p.running)?.quantum && (
         <p className="text-xs text-ink-soft" role="status">
           Simulating a {p.qubits ?? ""} qubit quantum circuit on this computer.
           {(p.qubits ?? 0) >= 12 ? " Circuits this size can take one to two minutes." : " This usually takes a few seconds."}

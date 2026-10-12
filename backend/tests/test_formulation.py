@@ -132,7 +132,7 @@ def test_api_round_trip():
     assert 0 <= body["quality"]["baseline_approx_ratio"] < 1   # nearest exit plan is not optimal here
     assert body["result"]["evaluation"]["capacity_violations"] == 0
     assert body["baseline"]["evaluation"]["capacity_violations"] > 0
-    assert c.post("/api/v1/optimize", json={"preset_id": "micro_hall", "solver": "ibm_hardware"}).status_code == 501
+    assert c.post("/api/v1/optimize", json={"preset_id": "micro_hall", "solver": "ibm_hardware"}).status_code == 400
 
 
 def _two_exit_venue(size_a, size_b, gate_a_cap, gate_b_cap, corridor_cap):

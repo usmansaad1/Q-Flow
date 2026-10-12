@@ -199,6 +199,8 @@ class Venue:
             except nx.NetworkXNoPath:
                 continue
         per_exit.sort(key=lambda p: (getattr(p, weight), p.exit_id))
+        if not per_exit:
+            return []  # no exit reachable; the caller explains this in plain words
         if k is None or k <= len(per_exit):
             return per_exit[: k] if k else per_exit
 
