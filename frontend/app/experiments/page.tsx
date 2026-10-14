@@ -92,7 +92,13 @@ export default function ExperimentsPage() {
 
   const remove = async (id: number) => {
     if (!confirm("Delete this experiment and all of its runs?")) return;
-    await api.deleteExperiment(id);
+    try {
+      await api.deleteExperiment(id);
+      setError(null);
+    } catch (e) {
+      setError(`Could not delete the experiment: ${(e as Error).message}`);
+      return;
+    }
     const l = await refresh();
     setSelected(l[0]?.id ?? null);
   };

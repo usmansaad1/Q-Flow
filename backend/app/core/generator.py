@@ -5,9 +5,10 @@ Each instance has `num_groups` zones, each holding one crowd group, and every zo
 has direct routes to exactly two different exits. With paths_per_group = 2 that
 gives exactly 2 * num_groups qubits, so problem size is controlled precisely.
 
-Exit capacities are set below the load the nearest exit plan would put on them,
-so instances are congested by design (otherwise the optimum is trivial and every
-method looks perfect). Instances are fully determined by the seed.
+Each exit's capacity is an even share of the crowd divided by `tightness`, with
+10% random variation. With the default tightness of 0.85, every exit is about 18%
+larger than an even share; a tightness above 1 makes exits smaller than an even
+share. Instances are fully determined by the seed.
 """
 from __future__ import annotations
 
@@ -19,8 +20,9 @@ from app.core.venue import Venue
 def generate_venue(num_groups: int, seed: int, num_exits: int | None = None,
                    tightness: float = 0.85) -> Venue:
     """
-    tightness: exit capacity as a fraction of a perfectly even share of the crowd.
-               Below 1 means even the best plan is close to full, so routing matters.
+    tightness: divides a perfectly even share of the crowd to give each exit's capacity.
+               Below 1 gives exits spare room (0.85 means about 18% above an even share);
+               above 1 makes them smaller than an even share.
     """
     if num_groups < 1:
         raise ValueError("num_groups must be at least 1.")

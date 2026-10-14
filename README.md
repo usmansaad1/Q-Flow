@@ -12,13 +12,13 @@ The aim is not to show quantum winning. Classical methods are expected to stay a
 
 ## Project status
 
-| Stage |                                   Scope                                               | Status |
-|-------|---------------------------------------------------------------------------------------|--------|
-|   1   | Venue model, shared optimisation formulation, classical solvers, preset venues, tests |  Done  |
-|   2   | QAOA on ideal and noisy simulators, quantum quality metrics                           |  Done  |
-|   3   | Automated experiments, SQLite storage, CSV and chart export                           |  Done  |
-|   4   | Web application: overview, venue lab, experiments dashboard, saved venues             |  Done  |
-|   5   | Real IBM hardware runs, methodology, QAOA and limitations page                        |  Done  |
+| Stage | Scope | Status |
+|---|---|---|
+| 1 | Venue model, shared optimisation formulation, classical solvers, preset venues, tests | Done |
+| 2 | QAOA on ideal and noisy simulators, quantum quality metrics | Done |
+| 3 | Automated experiments, SQLite storage, CSV and chart export | Done |
+| 4 | Web application: overview, venue lab, experiments dashboard, saved venues | Done |
+| 5 | Real IBM hardware runs, methodology, QAOA and limitations page | Done |
 
 ---
 
@@ -28,12 +28,12 @@ These come from the default experiment settings and are reproducible with `pytho
 
 **Quantum vs classical at QAOA depth p = 2.** The table shows the probability that a single quantum sample is the optimal plan. The classical exact solver finds it every time.
 
-| Venue             | Qubits | Ideal QAOA | Noisy (1x errors) | IBM Torino model | Random guessing |
-|-------------------|--------|------------|-------------------|------------------|-----------------|
-| Micro Hall        |   4    |    26.0%   |       22.1%       |       22.9%      |      6.2%       |
-| Small Event Hall  |   6    |    13.4%   |       9.2%        |       9.4%       |      1.6%       |
-| Concert Venue     |   8    |    6.8%    |       4.9%        |       4.2%       |      0.4%       |
-| Exhibition Centre |   10   |    3.4%    |       1.7%        |       1.5%       |      0.1%       |
+| Venue | Qubits | Ideal QAOA | Noisy (1x errors) | IBM Torino model | Random guessing |
+|---|---|---|---|---|---|
+| Micro Hall | 4 | 26.0% | 22.1% | 22.9% | 6.2% |
+| Small Event Hall | 6 | 13.4% | 9.2% | 9.4% | 1.6% |
+| Concert Venue | 8 | 6.8% | 4.9% | 4.2% | 0.4% |
+| Exhibition Centre | 10 | 3.4% | 1.7% | 1.5% | 0.1% |
 
 1. **QAOA genuinely works, but does not compete with classical methods.** Every quantum mode beats random guessing, by about 5 times at 4 qubits. At 12 qubits the ideal simulator beats it by about 60 times, and the noisy simulator by about 28 times. Its chance of finding the optimum still falls steadily as problems grow, while the classical exact solver is always optimal and runs in well under a millisecond.
 2. **Ideal QAOA learns the rules more easily than the goal.** Around 96% to 98% of ideal samples are valid plans, but far fewer are optimal. The penalty that enforces "one route per group" dominates the energy landscape, which is a known QAOA limitation.
@@ -79,22 +79,21 @@ This section takes you from a fresh computer to a running app. Steps 1 to 6 are 
 
 ### 1. Install the requirements
 
-| Tool    | Version                        | Check with         |
-|---------|--------------------------------|--------------------|
-| Python  | 3.12 or newer (tested on 3.13) | `python --version` |
-| Node.js | 20.9 or newer (includes npm)   | `node --version`   |
-| Git     | any recent version             | `git --version`    |
+| Tool | Version | Check with |
+|---|---|---|
+| Python | 3.12 or newer (tested on 3.13) | `python --version` |
+| Node.js | 20.9 or newer (includes npm) | `node --version` |
+| Git | any recent version | `git --version` |
 
 An IBM Cloud account is only needed for real quantum hardware runs (step 4). Everything else works without one.
 
-On Windows, tick "Add Python to PATH" when installing Python. NumPy and SciPy in this project need Python 
-3.12 or newer, so `pip install` fails on older versions.
+On Windows, tick "Add Python to PATH" when installing Python. NumPy and SciPy in this project need Python 3.12 or newer, so `pip install` fails on older versions.
 
 ### 2. Get the code
-Make a Q-flow named folder. Open it in cmd then
 
 ```bash
-git clone <repository url> .
+git clone <repository url>
+cd Q-Flow
 ```
 
 The project has two parts, each with its own folder and its own terminal:
@@ -119,11 +118,11 @@ This creates a `venv` folder inside `backend` that holds a private copy of Pytho
 
 Activate the virtual environment. This must be done in every new terminal before running backend commands:
 
-| System                 | Command                     |
-|------------------------|-----------------------------|
-| Windows PowerShell     | `venv\Scripts\activate`     |
+| System | Command |
+|---|---|
+| Windows PowerShell | `venv\Scripts\Activate.ps1` |
 | Windows Command Prompt | `venv\Scripts\activate.bat` |
-| macOS or Linux         | `source venv/bin/activate`  |
+| macOS or Linux | `source venv/bin/activate` |
 
 When it is active, the prompt starts with `(venv)`. On Windows PowerShell, if activation fails with "running scripts is disabled", run this once and try again:
 
@@ -141,7 +140,7 @@ python -m pytest -q tests
 
 `requirements.txt` lists every backend package with its exact version, so this one command installs everything: FastAPI, Qiskit and its simulators, OR-Tools, SciPy and the rest. Packages go into the `venv` folder, not your main Python.
 
-The first install downloads Qiskit, Qiskit Aer and OR-Tools, so it can take several minutes. All 78 tests should pass.
+The first install downloads Qiskit, Qiskit Aer and OR-Tools, so it can take several minutes. All 82 tests should pass.
 
 ### 4. Connect IBM Quantum (optional)
 
@@ -189,7 +188,7 @@ The frontend expects the backend at `http://127.0.0.1:8000`. To use a different 
 **Terminal 1, backend** (from `backend`, virtual environment active):
 
 ```bash
-uvicorn app.main:app --port 8000
+uvicorn app.main:app --reload
 ```
 
 The first start takes up to a minute while Qiskit loads. It is ready when the terminal shows `Application startup complete`. Interactive API documentation is then at `http://127.0.0.1:8000/docs`.
@@ -213,8 +212,8 @@ To check everything works:
 ```bash
 # Terminal 1
 cd backend
-venv\Scripts\activate          # or: source venv/bin/activate
-uvicorn app.main:app --port 8000
+venv\Scripts\Activate.ps1          # or: source venv/bin/activate
+uvicorn app.main:app --reload
 
 # Terminal 2
 cd frontend
@@ -250,7 +249,7 @@ Then restart both terminals. Update every file from the same version: mixing old
 | `QFLOW_IBM_CHANNEL` | `backend/.env` | `ibm_cloud` | IBM connection channel. Leave unset. |
 | `QFLOW_DB` | backend environment | `backend/data/qflow.db` | SQLite database location |
 | `QFLOW_RESULTS` | backend environment | `backend/results` | Where experiment CSVs and charts are exported |
-
+| `NEXT_PUBLIC_API_URL` | `frontend/.env.local` | `http://127.0.0.1:8000` | Backend address used by the web app |
 
 Values set in the terminal take priority over `backend/.env`.
 
@@ -325,7 +324,10 @@ Choose a solver (Classical, QAOA simulator, Noisy QAOA, or IBM hardware) and pre
 | People over capacity | The fewest people who would have to be taken out for every route and exit to fit. Each person is counted once, even if their path passes several overloaded routes and exits. |
 | Overloaded routes and exits | How many routes and exits are over capacity |
 | Busiest route or exit | Highest load as a percentage of capacity |
-| Run time | Wall clock time; quantum time is simulation on this computer, including parameter training |
+| Training time | Quantum only: choosing the circuit's angles, always on this computer |
+| Execution time | Solving or simulating on this computer; for IBM hardware, the time IBM's processor was busy |
+| Total time | Training plus execution, comparable across every solver |
+| IBM queue wait | Hardware only: time the job waited for IBM's processor, kept out of the total |
 | Qubits and two qubit gates | Size of the quantum circuit |
 
 Changing anything that affects the problem clears old results automatically, so the table never mixes answers from different venues. Moving boxes or selecting items does not count as a change.
@@ -429,7 +431,7 @@ Defined in `backend/app/core/experiments.py`.
 
 * **Random venues** for the scaling experiment come from `generator.py`. They are seeded (fully reproducible), congested by design so that optimisation matters, and use exactly 2 qubits per crowd group.
 * **Fair noise comparison.** In the noise experiment, parameters are trained once per venue and reused at every noise level, so only the noise changes.
-* **Honest timing.** Quantum run times always include parameter training, even when trained parameters are reused.
+* **Honest timing.** Quantum run times always include parameter training, even when trained parameters are reused, and real hardware runs report the same training, execution and total times as the simulators, with the IBM queue wait shown separately.
 
 ### Where results go
 
@@ -508,7 +510,7 @@ q-flow/
 │   │   ├── api/schemas.py         request models
 │   │   └── main.py                FastAPI routes
 │   ├── scripts/                   command line tools
-│   ├── tests/                     78 automated tests
+│   ├── tests/                     82 automated tests
 │   ├── results/                   exported experiment evidence
 │   └── requirements.txt
 ├── frontend/
@@ -528,7 +530,7 @@ cd backend
 python -m pytest -q tests
 ```
 
-The 78 tests check the guarantees every comparison depends on:
+The 82 tests check the guarantees every comparison depends on:
 
 * The lowest energy answer is always the best valid plan, checked against every possible answer.
 * Every invalid answer scores worse than the optimum.

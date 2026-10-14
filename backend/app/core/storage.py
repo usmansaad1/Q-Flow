@@ -128,7 +128,7 @@ class Storage:
     def finish_experiment(self, exp_id: int, summary: dict | None = None, error: str | None = None) -> None:
         with self._conn() as c:
             c.execute("UPDATE experiments SET status = ?, summary = ?, error = ?, finished_at = ? WHERE id = ?",
-                      ("failed" if error else "done", json.dumps(summary) if summary else None,
+                      ("failed" if error else "done", json.dumps(summary) if summary is not None else None,
                        error, _now(), exp_id))
 
     def mark_interrupted(self) -> int:
@@ -154,9 +154,9 @@ class Storage:
                             "FROM experiments e WHERE id = ?", (exp_id,)).fetchone()
         return self._exp_dict(row) if row else None
 
-    def delete_experiment(self, exp_id: int) -> None:
+    def delete_experiment(self, exp_id: int) -> bool:
         with self._conn() as c:
-            c.execute("DELETE FROM experiments WHERE id = ?", (exp_id,))
+            return c.execute("DELETE FROM experiments WHERE id = ?", (exp_id,)).rowcount > 0
 
     @staticmethod
     def _exp_dict(row) -> dict:

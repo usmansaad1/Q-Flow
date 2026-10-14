@@ -116,7 +116,9 @@ export interface SolverResultDTO {
     metrics?: QuantumMetrics;
     noise_model?: string;
     circuit?: { qubits: number; reps: number; transpiled: { depth: number; two_qubit_gates: number } };
-    timing?: { training_s: number; execution_s: number; total_s: number };
+    /** Quantum runs. Hardware adds the IBM queue wait, kept apart from the total. */
+    timing?: { training_s: number; execution_s: number; total_s: number;
+               queue_s?: number | null; queue_source?: "ibm" | "estimate" | "unknown" };
     [k: string]: unknown;
   };
 }

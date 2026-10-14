@@ -18,6 +18,8 @@ dry_run() only transpiles for the device. It sends nothing and uses no quota.
 from __future__ import annotations
 
 import os
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -112,6 +114,9 @@ def submit(problem: RoutingProblem, reps: int = 2, shots: int = 4096,
         "job_id": job.job_id(), "backend": b.name, "reps": reps, "shots": shots, "seed": seed,
         "theta": [float(x) for x in trained["theta"]],
         "transpiled": circuit_stats(isa),
+        # Kept so the finished run reports the same timing parts as a simulator run.
+        "training_s": float(trained["optimise_time_s"]),
+        "submitted_at": time.time(),
     }
 
 
@@ -140,9 +145,17 @@ def job_result(problem: RoutingProblem, job_id: str, meta: dict, reference: Solv
         usage = float(job.usage())  # seconds the processor was busy; queue time is not counted
     except Exception:
         usage = 0.0
+    training = float(meta.get("training_s", 0.0))  # jobs submitted before this field existed: 0
+    queue_s, queue_source = _queue_seconds(job, meta, usage)
     reps, theta = meta["reps"], meta["theta"]
+    # Same timing parts as a simulator run: training on this computer, then execution
+    # (here IBM processor time). Queue wait is reported apart, since it depends on how
+    # busy IBM is, not on the algorithm.
+    total = training + usage
     return SolverResult.build(
-        problem, "ibm_hardware", status, best["bitstring"], usage,
+        problem, "ibm_hardware", status, best["bitstring"], total,
+        timing={"training_s": training, "execution_s": usage, "total_s": total,
+                "queue_s": queue_s, "queue_source": queue_source},
         metrics=metrics,
         config={"reps": reps, "shots": shots, "seed": meta["seed"], "noise": "ibm_hardware",
                 "noise_level": None, "fake_backend": meta["backend"]},
@@ -152,3 +165,21 @@ def job_result(problem: RoutingProblem, job_id: str, meta: dict, reference: Solv
         optimal_energy=reference.extra["optimal_energy"],
         circuit={"qubits": problem.num_variables, "reps": reps, "transpiled": meta["transpiled"]},
     )
+
+
+def _queue_seconds(job, meta: dict, usage: float) -> tuple[float | None, str]:
+    """Seconds the job waited in IBM's queue. IBM's own timestamps when available,
+    otherwise an estimate from the time between submission and now."""
+    try:
+        ts = job.metrics().get("timestamps") or {}
+        created, running = ts.get("created"), ts.get("running")
+        if created and running:
+            wait = (datetime.fromisoformat(str(running).replace("Z", "+00:00"))
+                    - datetime.fromisoformat(str(created).replace("Z", "+00:00"))).total_seconds()
+            return max(0.0, wait), "ibm"
+    except Exception:
+        pass
+    submitted = meta.get("submitted_at")
+    if submitted is None:
+        return None, "unknown"
+    return max(0.0, time.time() - float(submitted) - usage), "estimate"

@@ -276,4 +276,5 @@ def experiment_chart(exp_id: int):
 
 @app.delete("/api/v1/experiments/{exp_id}", status_code=204)
 def delete_experiment(exp_id: int):
-    get_store().delete_experiment(exp_id)
+    if not get_store().delete_experiment(exp_id):
+        raise HTTPException(404, f"Experiment {exp_id} not found.")

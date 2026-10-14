@@ -41,8 +41,10 @@ def main():
         for e in store.list_experiments():
             print(f"#{e['id']:<4}{e['status']:<9}{e['num_runs']:>5} runs  {e['created_at']}  {e['title']}")
         return
-    if a.export:
+    if a.export is not None:
         exp = store.get_experiment(a.export)
+        if exp is None:
+            ap.error(f"no experiment #{a.export}. Use --list to see the stored ones.")
         for k, p in export_experiment(store, a.export, out_dir(a.export, exp["kind"])).items():
             print(f"{k:<8} {p}")
         return

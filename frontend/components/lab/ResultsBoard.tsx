@@ -84,7 +84,30 @@ export default function ResultsBoard({ runs }: { runs: Runs }) {
     },
     { label: "Overloaded routes and exits", cell: (c) => c.result.evaluation.capacity_violations },
     { label: "Busiest route or exit", cell: (c) => pct(c.result.evaluation.max_utilisation) },
-    { label: "Run time", note: "Quantum time is simulation on this computer, including training.", cell: (c) => c.baseline ? "" : seconds(c.result.runtime_s) },
+    {
+      label: "Training time",
+      note: "Choosing the quantum circuit's angles, always on this computer.",
+      cell: (c) => (c.quantum && c.result.extra.timing ? seconds(c.result.extra.timing.training_s) : ""),
+    },
+    {
+      label: "Execution time",
+      note: "Solving or simulating on this computer. For IBM hardware, the time IBM's processor was busy.",
+      cell: (c) => c.baseline ? "" : seconds(c.result.extra.timing ? c.result.extra.timing.execution_s : c.result.runtime_s),
+    },
+    {
+      label: "Total time",
+      note: "Training plus execution, comparable across every solver.",
+      cell: (c) => c.baseline ? "" : seconds(c.result.runtime_s),
+    },
+    {
+      label: "IBM queue wait",
+      note: "Time the job waited for IBM's processor. It depends on how busy IBM is, so it is not part of the total.",
+      cell: (c) => {
+        const t = c.result.extra.timing;
+        if (c.key !== "ibm_hardware" || t?.queue_s == null) return "";
+        return `${seconds(t.queue_s)}${t.queue_source === "estimate" ? " (estimate)" : ""}`;
+      },
+    },
     { label: "Qubits", cell: (c) => (c.quantum ? c.resp.problem.num_qubits : "") },
     { label: "Two qubit gates", cell: (c) => c.result.extra.circuit?.transpiled.two_qubit_gates ?? "" },
   ];

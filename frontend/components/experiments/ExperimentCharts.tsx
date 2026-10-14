@@ -18,6 +18,11 @@ const AXIS = { fontSize: 11, fill: "#5A6478" };
 type Metric = keyof Pick<RunRow, "prob_optimal" | "prob_feasible" | "mean_approx_ratio" | "random_prob_optimal" |
   "random_mean_ratio" | "two_qubit_gates" | "runtime_s">;
 
+/** Short venue names so several fit under one bar group: "Small Event Hall" becomes "Small Event". */
+const short = (v: string) => v.replace(" Venue", "").replace(" Centre", "").replace(" Hall", "");
+/** "FakeTorino" is Qiskit's name for the IBM Torino noise model. */
+const device = (m: string) => m.replace("Fake", "IBM ");
+
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 
 /** One row per x value; one column per series, averaged over runs. */
@@ -65,9 +70,9 @@ function Lines({ data, xLabel, percent = true, log = false, fit = false, colors,
           domain={log ? [(min: number) => min * 0.6, 1]
             : percent && fit ? [0, (max: number) => Math.min(1, Math.max(0.05, max * 1.25))]
             : percent ? [0, 1] : ["auto", "auto"]}
-          tickFormatter={(v) => (percent ? pct(v, log && v < 0.01 ? 1 : 0) : String(v))} />
+          tickFormatter={(v) => (percent ? pct(v, log && v < 0.001 ? 2 : log && v < 0.01 ? 1 : 0) : String(v))} />
         <Tooltip formatter={(v) => (percent ? pct(Number(v), 1) : String(Math.round(Number(v))))} labelFormatter={(l) => `${xLabel}: ${l}`} />
-        <Legend verticalAlign="top" align="right" height={26} iconType="plainline" itemSorter={null} wrapperStyle={{ fontSize: 11 }} />
+        <Legend verticalAlign="top" align="right" iconType="plainline" itemSorter={null} wrapperStyle={{ fontSize: 11, paddingBottom: 6 }} />
         {names.map((n, i) => (
           <Line key={n} type="linear" dataKey={n} stroke={color(n, i)} strokeWidth={2}
             dot={dashed.includes(n) ? false : { r: 3 }}
@@ -92,7 +97,7 @@ function Bars({ data, colors, log = false, percent = true }: {
           domain={log ? [(min: number) => min * 0.5, (max: number) => max * 2] : percent ? [0, 1] : ["auto", "auto"]}
           tickFormatter={(v) => (percent ? pct(v) : seconds(v))} />
         <Tooltip formatter={(v) => (percent ? pct(Number(v), 1) : seconds(Number(v)))} />
-        <Legend verticalAlign="top" align="right" height={26} itemSorter={null} wrapperStyle={{ fontSize: 11 }} />
+        <Legend verticalAlign="top" align="right" itemSorter={null} wrapperStyle={{ fontSize: 11, paddingBottom: 6 }} />
         {names.map((n, i) => <Bar key={n} dataKey={n} fill={color(n, i)} isAnimationActive={false} />)}
       </BarChart>
     </ResponsiveContainer>
@@ -128,8 +133,8 @@ function Scaling({ runs }: { runs: RunRow[] }) {
 function Noise({ runs }: { runs: RunRow[] }) {
   const depol = runs.filter((r) => r.method === "Depolarising");
   const devices = [...new Set(runs.filter((r) => r.method !== "Depolarising").map((r) => r.method))];
-  const deviceRows = table(runs, (r) => r.instance, (r) =>
-    r.method === "Depolarising" ? (r.noise_level === 0 ? "Ideal" : r.noise_level === 1 ? "Errors 1x" : null) : r.method.replace("Fake", "IBM "),
+  const deviceRows = table(runs, (r) => short(r.instance), (r) =>
+    r.method === "Depolarising" ? (r.noise_level === 0 ? "Ideal" : r.noise_level === 1 ? "Errors 1x" : null) : device(r.method),
   "mean_approx_ratio");
   return (
     <div className="grid gap-8 xl:grid-cols-3">
@@ -141,7 +146,7 @@ function Noise({ runs }: { runs: RunRow[] }) {
       </Panel>
       {devices.length > 0 && (
         <Panel title="Real device noise models" note="Calibrated errors and qubit layout of IBM processors.">
-          <Bars data={deviceRows} colors={{ Ideal: C.ideal, "Errors 1x": C.noisy, ...Object.fromEntries(devices.map((d, i) => [d.replace("Fake", "IBM "), C.devices[i % 3]])) }} />
+          <Bars data={deviceRows} colors={{ Ideal: C.ideal, "Errors 1x": C.noisy, ...Object.fromEntries(devices.map((d, i) => [device(d), C.devices[i % 3]])) }} />
         </Panel>
       )}
     </div>
@@ -150,7 +155,8 @@ function Noise({ runs }: { runs: RunRow[] }) {
 
 function Depth({ runs }: { runs: RunRow[] }) {
   const venues = [...new Set(runs.map((r) => r.instance))];
-  const [venue, setVenue] = useState(venues[0]);
+  const [picked, setVenue] = useState(venues[0]);
+  const venue = picked !== undefined && venues.includes(picked) ? picked : venues[0];
   const vr = runs.filter((r) => r.instance === venue);
   const label = (r: RunRow) => (r.method === "QAOA ideal" ? "Ideal" : "Noisy");
   const colors = { Ideal: C.ideal, Noisy: C.noisy };
@@ -184,16 +190,15 @@ function Versus({ runs }: { runs: RunRow[] }) {
   const methods = [...new Set(runs.map((r) => r.method))];
   const colorOf = (m: string) => m.startsWith("Naive") ? C.naive : m.startsWith("Classical exact") ? C.classical
     : m.startsWith("Classical") ? "#6B7280" : m === "QAOA ideal" ? C.ideal : m.startsWith("QAOA noisy") ? C.noisy : C.devices[0];
-  const colors = Object.fromEntries(methods.map((m) => [m, colorOf(m)]));
-  const short = (v: string) => v.replace(" Venue", "").replace(" Centre", "").replace(" Hall", "");
-  const rows = (metric: Metric) => table(runs, (r) => short(r.instance), (r) => r.method, metric);
+  const colors = Object.fromEntries(methods.map((m) => [device(m), colorOf(m)]));
+  const rows = (metric: Metric) => table(runs, (r) => short(r.instance), (r) => device(r.method), metric);
   return (
     <div className="grid gap-8 xl:grid-cols-2">
       <Panel title="Typical answer quality" note="Classical solvers find the best plan every time.">
         <Bars data={rows("mean_approx_ratio")} colors={colors} />
       </Panel>
       <Panel title="Run time" note="Log scale. Quantum time is simulation including training.">
-        <Bars data={table(runs.filter((r) => !r.method.startsWith("Naive")), (r) => short(r.instance), (r) => r.method, "runtime_s")}
+        <Bars data={table(runs.filter((r) => !r.method.startsWith("Naive")), (r) => short(r.instance), (r) => device(r.method), "runtime_s")}
           colors={colors} log percent={false} />
       </Panel>
     </div>

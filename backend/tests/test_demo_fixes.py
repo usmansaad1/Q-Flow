@@ -1,4 +1,5 @@
 """Checks for the pre demo fixes: display only solves, interrupted experiments."""
+import pytest
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -52,3 +53,38 @@ def test_single_valid_plan_scores_100_percent_for_quantum():
              "crowd_groups": [{"group_id": "A crowd", "location": "A", "size": 50}]}
     q = TestClient(app).post("/api/v1/optimize", json={"venue": venue, "solver": "qaoa_ideal", "record": False}).json()["quality"]
     assert q["prob_optimal"] == 1.0 and q["mean_approx_ratio"] == 1.0
+
+
+# ---------------------------------------------------------------- code review fixes
+def _two_places():
+    from app.core.venue import Venue
+    return Venue("t").add_location("A", "zone").add_location("E", "exit", capacity=100)
+
+
+def test_two_way_route_drawn_twice_in_opposite_directions_is_rejected():
+    v = _two_places()
+    v.add_route("A", "E", capacity=100, length=10)
+    v.add_route("E", "A", capacity=100, length=10)
+    with pytest.raises(ValueError, match="Duplicate routes"):
+        v.validate()
+
+
+def test_one_way_routes_in_opposite_directions_are_allowed():
+    v = _two_places()
+    v.add_route("A", "E", capacity=100, length=10, bidirectional=False)
+    v.add_route("E", "A", capacity=100, length=10, bidirectional=False)
+    v.validate()  # two separate one way corridors are a valid layout
+
+
+def test_deleting_a_missing_experiment_returns_404():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    assert TestClient(app).delete("/api/v1/experiments/999999").status_code == 404
+
+
+def test_empty_experiment_summary_is_kept():
+    from app.core.storage import Storage
+    s = Storage()
+    exp_id = s.create_experiment("depth", "t", {})
+    s.finish_experiment(exp_id, summary={})
+    assert s.get_experiment(exp_id)["summary"] == {}

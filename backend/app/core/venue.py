@@ -131,8 +131,16 @@ class Venue:
                 errors.append(f"Location '{loc.id}' capacity must be positive.")
         if not self.exits:
             errors.append("Venue needs at least one exit.")
-        route_ids = [r.id for r in self.routes]
-        if len(route_ids) != len(set(route_ids)):
+        # Each route occupies one direction, or both when it is two way. A route that
+        # occupies a direction already taken is a duplicate, so a two way A to B and
+        # any route B to A clash, while one way routes in opposite directions may coexist.
+        taken: set[tuple[str, str]] = set()
+        duplicate = False
+        for r in self.routes:
+            arcs = {(r.from_node, r.to_node)} | ({(r.to_node, r.from_node)} if r.bidirectional else set())
+            duplicate = duplicate or bool(arcs & taken)
+            taken |= arcs
+        if duplicate:
             errors.append("Duplicate routes between the same pair of locations.")
         for r in self.routes:
             if r.from_node not in locs or r.to_node not in locs:

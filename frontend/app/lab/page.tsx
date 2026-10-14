@@ -357,6 +357,16 @@ export default function LabPage() {
   const refreshHistory = () => api.labRuns().then(setHistory).catch(() => {});
   useEffect(() => { api.labRuns().then(setHistory).catch(() => {}); }, []);
 
+  const deleteRun = async (id: number) => {
+    if (!confirm(`Delete run #${id} from Run history? This can't be undone.`)) return;
+    try {
+      await api.deleteLabRun(id);
+      refreshHistory();
+    } catch (e) {
+      flash("error", `Could not delete run #${id}: ${(e as Error).message}`);
+    }
+  };
+
   const openRun = async (id: number) => {
     if (!confirmDiscard()) return;
     try {
@@ -480,7 +490,7 @@ export default function LabPage() {
             </section>
           )}
 
-          <RunHistory runs={history} onOpen={openRun} onDelete={async (id) => { await api.deleteLabRun(id); refreshHistory(); }} />
+          <RunHistory runs={history} onOpen={openRun} onDelete={deleteRun} />
         </div>
 
         <aside className="space-y-5">

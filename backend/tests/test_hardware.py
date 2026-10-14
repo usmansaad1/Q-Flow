@@ -97,5 +97,12 @@ def test_hardware_job_is_submitted_polled_and_saved_once(fake_ibm):
     assert done["result"]["extra"]["backend"] == device.name
     assert 0.0 <= done["quality"]["mean_approx_ratio"] <= 1.0
     assert "run_id" in done
+    # Same timing parts as a simulator run; the queue wait is reported apart from the total.
+    t = done["result"]["extra"]["timing"]
+    assert t["execution_s"] == 12.5                     # LocalJob.usage(): processor seconds
+    assert t["training_s"] > 0
+    assert t["total_s"] == pytest.approx(t["training_s"] + t["execution_s"])
+    assert done["result"]["runtime_s"] == pytest.approx(t["total_s"])
+    assert t["queue_s"] is not None and t["queue_source"] == "estimate"  # LocalJob has no IBM timestamps
     again = c.get(f"/api/v1/hardware/jobs/{job_id}").json()
     assert again["run_id"] == done["run_id"]  # answered from the saved copy, not saved twice
