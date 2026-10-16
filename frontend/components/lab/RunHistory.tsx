@@ -1,9 +1,12 @@
 "use client";
+// WHAT THIS FILE IS FOR: the fold out table of past Lab runs.
+// The Lab page shows it so users can reopen or delete earlier results.
 
 import { pct } from "@/lib/format";
 import type { LabRunSummary } from "@/lib/types";
 import { SOLVERS } from "./solvers";
 
+// Turns a saved timestamp into a friendly local date and time, like "12 Oct 2026, 14:05".
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
 /** Every Lab run is saved automatically; reopen one to see its table and map again. */
@@ -16,6 +19,7 @@ export default function RunHistory({ runs, onOpen, onDelete }:
       </summary>
       {!runs.length ? <p className="mt-2 text-sm text-ink-soft">Every run is saved here automatically.</p> : (
         <table className="mt-3 w-full text-sm">
+          {/* Column titles, then one row per saved run with Open and Delete buttons */}
           <thead>
             <tr className="border-b border-line text-left text-xs text-ink-soft">
               <th className="py-1.5 font-medium">Venue</th><th className="font-medium">Solver</th>

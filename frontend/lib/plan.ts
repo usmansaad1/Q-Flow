@@ -1,6 +1,10 @@
+// WHAT THIS FILE IS FOR: links a solver's answer back to the venue drawing on screen.
+// It lets the map colour each route and exit by how many people the plan sends through it.
 import type { PlanLoads } from "@/components/VenueCanvas";
 import type { Evaluation } from "./types";
 
+// Collects the number of people and how full each drawn route and exit is.
+// Exits are recognised by names starting with "exit:" in the server's results.
 /** Map a solver's resource loads onto canvas edges and exits. */
 export function planLoads(ev: Evaluation, routeIds: Map<string, string>): PlanLoads {
   const routes = new Map<string, { load: number; util: number }>();

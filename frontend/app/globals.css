@@ -1,5 +1,8 @@
+/* WHAT THIS FILE IS FOR: the look shared by the whole website, such as colours, fonts and focus outlines. */
+/* Every page loads it through the main layout. Tailwind is the styling toolkit the pages use. */
 @import "tailwindcss";
 
+/* The site's colour palette and fonts. Pages refer to these names, such as "ink" or "exit". */
 @theme {
   --color-paper: #F5F7F9;
   --color-panel: #FFFFFF;
@@ -17,11 +20,13 @@
   --font-display: "IBM Plex Sans Condensed", "IBM Plex Sans", ui-sans-serif, sans-serif;
 }
 
+/* The page background and normal text colour. */
 html {
   background: var(--color-paper);
   color: var(--color-ink);
 }
 
+/* The default font, text size and line spacing. */
 body {
   font-family: var(--font-sans);
   font-size: 15px;
@@ -34,11 +39,13 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* A clear purple outline around whatever is selected with the keyboard. */
 :focus-visible {
   outline: 2px solid var(--color-quantum);
   outline-offset: 2px;
 }
 
+/* Turns off animations for visitors who ask their device for less motion. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -46,6 +53,7 @@ body {
   }
 }
 
+/* React Flow is the drawing tool behind the venue map; these rules restyle its zoom buttons and credit line. */
 /* React Flow chrome, quieted to match the drafting paper look. */
 .react-flow__controls {
   box-shadow: none;

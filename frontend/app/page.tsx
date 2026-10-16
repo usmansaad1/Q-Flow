@@ -1,5 +1,9 @@
 "use client";
 
+// WHAT THIS FILE IS FOR: the home page, the first thing a visitor sees.
+// It explains the project and shows a live demo: a concert venue before and after optimising.
+// It also links to the venue lab and the experiments pages.
+
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -11,6 +15,8 @@ import { planLoads } from "@/lib/plan";
 import type { OptimizeResponse } from "@/lib/types";
 import { graphToVenue, venueToGraph, type PlaceNode, type RouteEdge } from "@/lib/venue";
 
+// The four step summary of the project shown at the bottom of the page.
+// A QUBO is a maths puzzle made only of yes or no choices, the form quantum optimisers accept.
 const STEPS = [
   { title: "Model the venue", body: "Areas, corridors and exits become a graph. Every route and exit has a capacity." },
   { title: "Write it as a QUBO", body: "Each choice of route for a crowd group is one binary variable, so one qubit." },
@@ -18,30 +24,38 @@ const STEPS = [
   { title: "Measure the gap", body: "Compare answer quality, reliability and cost as problems grow and noise rises." },
 ];
 
+// The home page. It loads the example concert venue and lets the visitor switch between two plans:
+// everyone to the nearest gate, or the best plan from the exact classical solver.
 export default function Home() {
+  // What the page remembers: the venue drawing, the solver's answer, which plan is shown, and any error.
   const [graph, setGraph] = useState<{ nodes: PlaceNode[]; edges: RouteEdge[] } | null>(null);
   const [resp, setResp] = useState<OptimizeResponse | null>(null);
   const [view, setView] = useState<"before" | "after">("before");
   const [error, setError] = useState<string | null>(null);
 
+  // When the page opens: fetch the concert venue and solve it once for the demo.
+  // The last "false" keeps this demo solve out of the run history.
   useEffect(() => {
     (async () => {
       try {
         const v = await api.preset("concert_venue");
         setGraph(venueToGraph(v));
-        setResp(await api.optimize(v, { weights: { distance: 1, time: 0, congestion: 1, overflow: 2 }, paths_per_group: 2, penalty_factor: 1.5 }, "classical_exact"));
+        setResp(await api.optimize(v, { weights: { distance: 1, time: 0, congestion: 1, overflow: 2 }, paths_per_group: 2, penalty_factor: 1.5 }, "classical_exact", undefined, false));
       } catch (e) {
         setError((e as Error).message);
       }
     })();
   }, []);
 
+  // Works out how busy each route and exit is under the chosen plan, so the map can colour them.
+  // "Before" is the nearest gate plan; "after" is the optimised plan.
   const routeIds = useMemo(() => (graph ? graphToVenue("", graph.nodes, graph.edges).routeIds : new Map()), [graph]);
   const ev = resp ? (view === "before" ? resp.baseline : resp.result).evaluation : null;
   const loads = useMemo(() => (ev ? planLoads(ev, routeIds) : null), [ev, routeIds]);
 
   return (
     <main className="mx-auto max-w-[1440px] px-5 pb-16 pt-10">
+      {/* The headline and a one sentence summary of the project */}
       <div className="grid items-end gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <h1 className="max-w-[18ch] font-display text-[clamp(2.2rem,5vw,4rem)] font-bold leading-[1.02]">
           How close is quantum optimisation to routing a real crowd?
@@ -52,6 +66,7 @@ export default function Home() {
         </p>
       </div>
 
+      {/* The live demo: the venue map on the left, the plan switch and key numbers on the right */}
       <section className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div>
           <div className="h-[460px] overflow-hidden rounded-[4px] border border-line bg-white">
@@ -61,6 +76,7 @@ export default function Home() {
           <LoadLegend className="mt-2" />
         </div>
 
+        {/* The plan switch, then how many people are over capacity and the busiest route */}
         <div className="flex flex-col">
           <p className="text-sm text-ink-soft">Concert venue: 980 people, four crowd sections, three gates.</p>
           <div className="mt-3 inline-flex self-start rounded-[3px] border border-line bg-white p-1" role="group" aria-label="Plan shown">
@@ -91,6 +107,7 @@ export default function Home() {
         </div>
       </section>
 
+      {/* What the project tests, links to the lab and experiments, and the four steps */}
       <section className="mt-14 grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
         <div className="max-w-[60ch] space-y-4">
           <h2 className="font-display text-2xl font-bold">What this project tests</h2>

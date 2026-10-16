@@ -1,9 +1,13 @@
 "use client";
+// WHAT THIS FILE IS FOR: the side panel for editing whatever is selected on the venue map.
+// Pick an area, exit or route and its settings appear here to change or delete.
+// The Lab page shows it next to the venue editor.
 
 import { MAX_SPLIT, PLACE_TYPES, WALK_SPEED, splitCrowd, type PlaceNode, type RouteEdge } from "@/lib/venue";
 import type { LocationType } from "@/lib/types";
 import { Button, Field, NumberInput, OptionalNumberInput, Select, TextInput } from "./Field";
 
+// What the panel is given: the selected place or route, plus ways to report changes back.
 interface Props {
   node: PlaceNode | null;
   edge: RouteEdge | null;
@@ -13,7 +17,9 @@ interface Props {
   onDelete: () => void;
 }
 
+// Shows one of three forms: for a place, for a route, or a short help note when nothing is selected.
 export default function Inspector({ node, edge, nodeName, onNodeChange, onEdgeChange, onDelete }: Props) {
+  // Case 1: a place (area or exit) is selected.
   if (node) {
     const d = node.data;
     const isExit = d.locationType === "exit";
@@ -27,6 +33,7 @@ export default function Inspector({ node, edge, nodeName, onNodeChange, onEdgeCh
           <Select<LocationType> value={d.locationType} options={PLACE_TYPES}
             onChange={(v) => onNodeChange(node.id, { locationType: v })} />
         </Field>
+        {/* Exits ask for capacity; ordinary areas ask for head count and how many groups to split into */}
         {isExit ? (
           <Field label="Exit capacity" hint="People this exit can take during the evacuation.">
             <NumberInput value={d.capacity ?? 0} min={1}
@@ -52,6 +59,7 @@ export default function Inspector({ node, edge, nodeName, onNodeChange, onEdgeCh
       </div>
     );
   }
+  // Case 2: a route between two places is selected.
   if (edge) {
     return (
       <div className="space-y-3">
@@ -75,6 +83,7 @@ export default function Inspector({ node, edge, nodeName, onNodeChange, onEdgeCh
       </div>
     );
   }
+  // Case 3: nothing is selected, so explain how to start editing.
   return (
     <div className="space-y-2 text-sm text-ink-soft">
       <h3 className="font-display text-base font-bold text-ink">Edit the venue</h3>

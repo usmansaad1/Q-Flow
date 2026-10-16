@@ -1,9 +1,13 @@
+# WHAT THIS FILE IS FOR: automatic checks that the quantum method (QAOA) is built correctly.
+# QAOA runs a quantum circuit (a sequence of operations on qubits) many times and
+# collects the plans it finds. These tests use small venues so they finish quickly.
 """QAOA correctness checks. Kept small so the suite stays fast."""
 import warnings
 
 import numpy as np
 import pytest
 
+# Hide library warnings during the tests.
 warnings.filterwarnings("ignore")
 
 from qiskit import transpile
@@ -17,11 +21,14 @@ from app.core.solvers.quantum import (
 )
 
 
+# Supplies the smallest preset venue (4 qubits), built once and shared by the tests below.
 @pytest.fixture(scope="module")
 def micro():
     return RoutingProblem(get_preset("micro_hall"))
 
 
+# Checks that the problem rewritten in the form a quantum circuit needs (the Ising form)
+# still gives every plan the same score as the original formula, on every preset.
 @pytest.mark.parametrize("pid", list(PRESETS))
 def test_ising_matches_qubo(pid):
     p = RoutingProblem(get_preset(pid))
@@ -34,6 +41,7 @@ def test_ising_matches_qubo(pid):
         assert e == pytest.approx(energies[k], abs=1e-9)
 
 
+# Checks that the exact calculation and the sampling simulator agree on which plan each result means.
 def test_bit_order_statevector_vs_aer(micro):
     """Counts keys and statevector indices must address the same plan."""
     qc, params = build_qaoa_circuit(micro, 1, measure=False)
@@ -45,6 +53,8 @@ def test_bit_order_statevector_vs_aer(micro):
     assert np.abs(counts_to_probs(counts, micro.num_variables) - sv_probs).max() < 0.02
 
 
+# Checks that noise free QAOA finds the best plan over twice as often as random guessing,
+# finds valid plans more often too, and returns a valid plan.
 def test_ideal_qaoa_beats_random(micro):
     r = solve_qaoa_ideal(micro, reps=2, shots=2048)
     m = r.extra["metrics"]
@@ -53,12 +63,14 @@ def test_ideal_qaoa_beats_random(micro):
     assert r.evaluation["feasible"]
 
 
+# Checks that heavy simulated noise makes the average plan quality worse than no noise.
 def test_noise_degrades_quality(micro):
     clean = solve_qaoa_noisy(micro, reps=2, noise="depolarizing", noise_level=0, shots=4096)
     noisy = solve_qaoa_noisy(micro, reps=2, noise="depolarizing", noise_level=10, shots=4096)
     assert noisy.extra["metrics"]["mean_approx_ratio"] < clean.extra["metrics"]["mean_approx_ratio"]
 
 
+# Checks that stretching tuned settings to one more circuit layer gives two more settings each time.
 def test_interp_preserves_shape():
     t = interp(np.array([0.5, 0.3]), 1)
     assert t.shape == (4,)
@@ -66,6 +78,7 @@ def test_interp_preserves_shape():
     assert t3.shape == (6,)
 
 
+# Checks that asking the web API for a noisy quantum run works and returns sensible quality figures.
 def test_api_quantum(micro):
     from fastapi.testclient import TestClient
     from app.main import app

@@ -1,7 +1,12 @@
+// WHAT THIS FILE IS FOR: a dictionary of the shapes of data the website sends and receives.
+// The backend is the server that does the maths; it talks to this site through an API (a set of web addresses).
+// Every page uses these descriptions so both sides agree on field names.
 // Mirrors the backend API (backend/app/api/schemas.py and solver outputs).
 
+// The kinds of place a venue can contain, from entrances to exits.
 export type LocationType = "entrance" | "zone" | "hall" | "corridor" | "seating" | "event" | "exit";
 
+// One place in the venue: its name, kind, exit capacity and position on the drawing.
 export interface LocationDTO {
   id: string;
   location_type: LocationType;
@@ -10,6 +15,7 @@ export interface LocationDTO {
   y?: number | null;
 }
 
+// One walkway between two places: how many people it holds, how long it is, and its travel time.
 export interface RouteDTO {
   from_node: string;
   to_node: string;
@@ -20,12 +26,14 @@ export interface RouteDTO {
   id?: string | null;
 }
 
+// One crowd group: a number of people who start in the same place and move together.
 export interface GroupDTO {
   group_id: string;
   location: string;
   size: number;
 }
 
+// A whole venue: its name, places, walkways and crowd groups.
 export interface VenueDTO {
   name: string;
   description?: string;
@@ -34,6 +42,8 @@ export interface VenueDTO {
   crowd_groups: GroupDTO[];
 }
 
+// A short line about a venue the user has saved, used in lists.
+// Qubits are the basic units of a quantum computer; this counts how many the venue needs.
 export interface SavedVenueSummary {
   id: number;
   name: string;
@@ -42,6 +52,7 @@ export interface SavedVenueSummary {
   total_people: number;
 }
 
+// A short description of one of the ready made example venues.
 export interface PresetInfo {
   id: string;
   name: string;
@@ -50,6 +61,7 @@ export interface PresetInfo {
   total_people: number;
 }
 
+// How much each goal matters when scoring a plan: short distance, short time, less crowding, no overflow.
 export interface Weights {
   distance: number;
   time: number;
@@ -57,12 +69,14 @@ export interface Weights {
   overflow: number;
 }
 
+// The user's settings for a planning problem: goal weights, route choices per group, and rule breaking penalty.
 export interface ProblemSettings {
   weights: Weights;
   paths_per_group: number;
   penalty_factor: number;
 }
 
+// Settings for a quantum run: circuit layers, number of repeat measurements (shots), and the noise to simulate.
 export interface QuantumSettings {
   reps: number;
   shots: number;
@@ -72,6 +86,7 @@ export interface QuantumSettings {
   seed: number;
 }
 
+// The scorecard for one plan: total score, penalties, whether it obeys every rule, and how full each route is.
 export interface Evaluation {
   energy: number;
   objective: number;
@@ -87,6 +102,7 @@ export interface Evaluation {
   total_person_distance: number;
 }
 
+// The path and exit chosen for one crowd group, and whether that choice is valid.
 export interface GroupPlan {
   group_id: string;
   size: number;
@@ -95,6 +111,7 @@ export interface GroupPlan {
   valid: boolean;
 }
 
+// How often a quantum run hit the best or a valid answer, compared with pure random guessing.
 export interface QuantumMetrics {
   shots: number;
   prob_optimal: number;
@@ -103,6 +120,8 @@ export interface QuantumMetrics {
   random_baseline: { prob_optimal: number; prob_feasible: number; mean_approx_ratio: number };
 }
 
+// The answer from one solver (a method that searches for the best plan), with its score and run time.
+// The "extra" part holds quantum details such as circuit size, noise and timing.
 export interface SolverResultDTO {
   solver: string;
   status: string;
@@ -123,6 +142,7 @@ export interface SolverResultDTO {
   };
 }
 
+// A size summary of the maths problem built from a venue: groups, choices, qubits and limited resources.
 export interface ProblemSummary {
   venue: string;
   num_groups: number;
@@ -132,6 +152,7 @@ export interface ProblemSummary {
   resources: { id: string; kind: "route" | "exit"; capacity: number }[];
 }
 
+// How close a result came to the best possible plan, plus the same figures for random guessing.
 export interface Quality {
   optimal_energy: number;
   approximation_ratio: number;
@@ -144,6 +165,7 @@ export interface Quality {
   baseline_is_optimal?: boolean;
 }
 
+// Everything the server sends back after solving: the problem size, the result, a classical comparison and quality.
 export interface OptimizeResponse {
   problem: ProblemSummary;
   result: SolverResultDTO;
@@ -154,8 +176,10 @@ export interface OptimizeResponse {
   run_id?: number;
 }
 
+// The four kinds of experiment: problem size, noise level, circuit depth, and quantum versus classical.
 export type ExperimentKind = "scaling" | "noise" | "depth" | "versus";
 
+// The basic facts about one experiment: its kind, title, progress, settings and summary table.
 export interface ExperimentInfo {
   id: number;
   kind: ExperimentKind;
@@ -169,6 +193,7 @@ export interface ExperimentInfo {
   num_runs: number;
 }
 
+// One row of experiment results: a single solver run with its settings and scores.
 export interface RunRow {
   id: number;
   instance: string;
@@ -192,10 +217,12 @@ export interface RunRow {
   runtime_s: number | null;
 }
 
+// An experiment together with every run row it produced.
 export interface ExperimentDetail extends ExperimentInfo {
   runs: RunRow[];
 }
 
+// A short line about one past run from the lab, shown in the run history list.
 export interface LabRunSummary {
   id: number;
   venue_name: string;
@@ -205,6 +232,7 @@ export interface LabRunSummary {
   created_at: string;
 }
 
+// A full past run: its results plus the venue and settings used, so it can be reopened.
 export interface LabRunDetail extends OptimizeResponse {
   id: number;
   venue: VenueDTO;
@@ -213,12 +241,14 @@ export interface LabRunDetail extends OptimizeResponse {
 }
 
 // ------------------------------------------------------------ IBM hardware (Stage 5)
+// One real IBM quantum computer: its name, qubit count and how many jobs are waiting.
 export interface HardwareDevice {
   name: string;
   num_qubits: number;
   pending_jobs: number | null;
 }
 
+// The result of a trial check before sending a job to IBM: the device, queue and circuit size.
 export interface HardwareCheck {
   backend: string;
   pending_jobs: number | null;
@@ -226,6 +256,7 @@ export interface HardwareCheck {
   transpiled: { depth: number; two_qubit_gates: number; [k: string]: unknown };
 }
 
+// The progress of a job sent to a real IBM quantum computer, checked again and again until it finishes.
 /** A job while IBM works on it. Once DONE, the response carries the full OptimizeResponse fields. */
 export type HardwareJobState = {
   job_id: string;

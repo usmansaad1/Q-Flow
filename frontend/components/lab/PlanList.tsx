@@ -1,7 +1,12 @@
 "use client";
+// WHAT THIS FILE IS FOR: a simple written list of an evacuation plan.
+// For each crowd group it shows the head count and the rooms it walks through.
+// The Lab page uses it under the results to spell out a chosen plan.
 
 import type { GroupPlan } from "@/lib/types";
 
+// Lists every group with its size and route, or says no valid route was chosen.
+// The route skips the first stop, since that is the room the group starts in.
 export default function PlanList({ title, plan, note }: { title: string; plan: GroupPlan[]; note?: string }) {
   return (
     <div>

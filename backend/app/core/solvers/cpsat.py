@@ -1,3 +1,6 @@
+# WHAT THIS FILE IS FOR: a fast, professional grade ordinary solver from Google (OR Tools CP SAT).
+# It scores plans by exactly the same rules as the quantum method, so the race is fair.
+# Unlike checking every plan, it still copes when venues get large.
 """
 Classical solver using Google OR-Tools CP-SAT on the *same* objective.
 
@@ -17,29 +20,39 @@ from ortools.sat.python import cp_model
 from app.core.problem import RoutingProblem
 from app.core.solvers.base import SolverResult
 
+# The engine only works with whole numbers, so every cost is multiplied by a billion first.
+# This keeps the rounding error tiny.
 SCALE = 1_000_000_000  # one scale for every term; int64 has ample headroom
 
 
+# Describes the routing puzzle to Google's engine, lets it search, and returns the best plan found.
+# It stops after time_limit_s seconds and can search on several processor cores at once.
 def solve_cpsat(problem: RoutingProblem, time_limit_s: float = 10.0, workers: int = 8) -> SolverResult:
     t0 = time.perf_counter()
+    # Step 1: one yes or no switch per possible route.
     m = cp_model.CpModel()
     x = [m.NewBoolVar(o.name) for o in problem.options]
 
+    # Step 2: the hard rule. Each group must take exactly one route.
     for idxs in problem.group_options.values():
         m.AddExactlyOne(x[i] for i in idxs)
 
+    # Step 3: read the importance weights and the cost pieces for distance, time and overflow.
     w = problem.weights
     lin_d, _ = problem.components["distance"]
     lin_t, _ = problem.components["time"]
     lin_o, quad_o = problem.components["overflow"]
     n_res = max(len(problem.resources), 1)
 
+    # Step 4: add the simple cost of each route on its own (length, time, overflow).
     terms = []
     for i in range(problem.num_variables):
         c = w.distance * lin_d.get(i, 0) + w.time * lin_t.get(i, 0) + w.overflow * lin_o.get(i, 0)
         if c:
             terms.append(round(c * SCALE) * x[i])
 
+    # Step 5: crowding. For each corridor or door, count the people using it.
+    # The penalty grows with the square of that count, so packed spots cost far more.
     # Congestion: (load_r / cap_r)^2 / R, with load_r an integer expression.
     for rid, users in problem.resource_users.items():
         cap = problem.resources[rid].capacity
@@ -52,6 +65,8 @@ def solve_cpsat(problem: RoutingProblem, time_limit_s: float = 10.0, workers: in
         if coef:
             terms.append(coef * sq)
 
+    # Step 6: extra cost when two particular routes are chosen together.
+    # A helper switch "y" is on only when both routes are picked.
     # Pairwise overflow terms.
     for (a, b), c in quad_o.items():
         y = m.NewBoolVar(f"and_{a}_{b}")
@@ -59,6 +74,7 @@ def solve_cpsat(problem: RoutingProblem, time_limit_s: float = 10.0, workers: in
         m.AddBoolOr([x[a].Not(), x[b].Not()]).OnlyEnforceIf(y.Not())
         terms.append(round(w.overflow * c * SCALE) * y)
 
+    # Step 7: ask the engine for the lowest total cost, within the time limit.
     m.Minimize(sum(terms))
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = time_limit_s
@@ -66,6 +82,8 @@ def solve_cpsat(problem: RoutingProblem, time_limit_s: float = 10.0, workers: in
     status = solver.Solve(m)
     runtime = time.perf_counter() - t0
 
+    # Step 8: report back. "optimal" means proven best; "feasible" means valid but time ran out.
+    # The plan is rescored by the shared rules, so the rounding above never shows in results.
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         return SolverResult("classical_cpsat", "infeasible", [0] * problem.num_variables, runtime)
     bits = [int(solver.Value(v)) for v in x]

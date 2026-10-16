@@ -1,12 +1,19 @@
 "use client";
 
+// WHAT THIS FILE IS FOR: the Experiments page, where batches of solver runs are started and reviewed.
+// Each experiment answers one research question and stores every result.
+// Results can be viewed as charts, downloaded as a spreadsheet file, or deleted.
+
 import { useCallback, useEffect, useState } from "react";
 
 import ExperimentCharts from "@/components/experiments/ExperimentCharts";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { Button } from "@/components/lab/Field";
 import { api } from "@/lib/api";
 import type { ExperimentDetail, ExperimentInfo, ExperimentKind, RunRow } from "@/lib/types";
 
+// The four experiments on offer, each with its question and rough run times for quick and full runs.
+// QAOA is the quantum method being tested; qubits are the basic units of a quantum computer.
 const KINDS: { kind: ExperimentKind; title: string; question: string; quick: string; full: string }[] = [
   { kind: "scaling", title: "Problem size", question: "How does QAOA hold up as the venue needs more qubits?", quick: "about 10 s", full: "about 2 min" },
   { kind: "noise", title: "Quantum noise", question: "How much do hardware errors cost, including real IBM device models?", quick: "about 5 s", full: "about 1 min" },
@@ -14,10 +21,13 @@ const KINDS: { kind: ExperimentKind; title: string; question: string; quick: str
   { kind: "versus", title: "Quantum versus classical", question: "Every solver on every preset venue, including run time.", quick: "about 5 s", full: "about 30 s" },
 ];
 
+// The text colour for each experiment status: amber while running, green when done, dark red if failed.
 const STATUS: Record<ExperimentInfo["status"], string> = {
   running: "text-amber", done: "text-exit", failed: "text-wine",
 };
 
+// Turns the run rows into CSV text, a simple table format that spreadsheet programs open.
+// Values containing commas, quotes or line breaks are wrapped in quotes so the table stays intact.
 function toCsv(runs: RunRow[]): string {
   if (!runs.length) return "";
   const cols = Object.keys(runs[0]) as (keyof RunRow)[];
@@ -25,6 +35,7 @@ function toCsv(runs: RunRow[]): string {
   return [cols.join(","), ...runs.map((r) => cols.map((c) => esc(r[c])).join(","))].join("\n");
 }
 
+// Saves the given text to the visitor's computer as a file with the given name.
 function download(name: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
   const a = Object.assign(document.createElement("a"), { href: url, download: name });
@@ -32,15 +43,20 @@ function download(name: string, text: string) {
   URL.revokeObjectURL(url);
 }
 
+// Shows a stored date and time in the visitor's own local format.
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
+// The Experiments page. The left column starts runs and lists past ones; the right shows the chosen one.
 export default function ExperimentsPage() {
+  // What the page remembers: all experiments, the one picked, its full results, errors, and which run is starting.
   const [list, setList] = useState<ExperimentInfo[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [detail, setDetail] = useState<ExperimentDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState<string | null>(null);
+  const [ask, confirmDialog] = useConfirm();
 
+  // Reloads the list of experiments from the server and returns it.
   const refresh = useCallback(async () => {
     try {
       const l = await api.experiments();
@@ -53,12 +69,14 @@ export default function ExperimentsPage() {
     }
   }, []);
 
+  // When the page opens: load the list and pick the newest experiment.
   useEffect(() => {
     api.experiments()
       .then((l) => { setList(l); if (l.length) setSelected((s) => s ?? l[0].id); })
       .catch((e) => setError(e.message));
   }, []);
 
+  // Whenever a different experiment is picked, load its full results.
   useEffect(() => {
     if (selected == null) return;
     api.experiment(selected).then(setDetail).catch((e) => setError(e.message));
@@ -67,6 +85,7 @@ export default function ExperimentsPage() {
   const shown = detail && detail.id === selected ? detail : null;
 
   // Poll while anything is running.
+  // Checks again every 2.5 seconds, so new results appear without reloading the page.
   const anyRunning = list.some((e) => e.status === "running");
   useEffect(() => {
     if (!anyRunning) return;
@@ -77,6 +96,7 @@ export default function ExperimentsPage() {
     return () => clearInterval(t);
   }, [anyRunning, selected, refresh]);
 
+  // Starts a new experiment, quick or full, then shows it straight away.
   const start = async (kind: ExperimentKind, quick: boolean) => {
     setStarting(`${kind}-${quick}`);
     try {
@@ -90,8 +110,14 @@ export default function ExperimentsPage() {
     }
   };
 
+  // Asks the user to confirm, deletes the experiment, then shows the newest one left.
   const remove = async (id: number) => {
-    if (!confirm("Delete this experiment and all of its runs?")) return;
+    const ok = await ask({
+      title: "Delete this experiment?",
+      message: "The experiment and all of its runs will be removed. This can't be undone.",
+      confirmLabel: "Delete experiment", danger: true,
+    });
+    if (!ok) return;
     try {
       await api.deleteExperiment(id);
       setError(null);
@@ -113,6 +139,7 @@ export default function ExperimentsPage() {
       {error && <p className="mt-4 rounded-[3px] border border-wine/40 bg-white px-4 py-3 text-sm text-wine">{error}</p>}
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
+        {/* Left column: buttons to start each experiment, then the history list */}
         <aside className="space-y-6">
           <section>
             <h2 className="font-display text-lg font-bold">Run an experiment</h2>
@@ -131,6 +158,7 @@ export default function ExperimentsPage() {
             </ul>
           </section>
 
+          {/* Past experiments; clicking one shows it on the right */}
           <section>
             <h2 className="font-display text-lg font-bold">History</h2>
             {!list.length && <p className="mt-2 text-sm text-ink-soft">Nothing stored yet. Start with a quick run above.</p>}
@@ -151,6 +179,7 @@ export default function ExperimentsPage() {
           </section>
         </aside>
 
+        {/* Right panel: the chosen experiment, or a hint if none is chosen */}
         <section className="min-w-0 rounded-[4px] border border-line bg-panel p-5">
           {!shown ? (
             <div className="grid min-h-[300px] place-items-center text-center text-sm text-ink-soft">
@@ -158,6 +187,7 @@ export default function ExperimentsPage() {
             </div>
           ) : (
             <>
+              {/* Title and facts, plus download, chart and delete buttons */}
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="font-display text-2xl font-bold">{KINDS.find((k) => k.kind === shown.kind)?.title}</h2>
@@ -180,6 +210,7 @@ export default function ExperimentsPage() {
                 </div>
               </div>
 
+              {/* Progress note while running, or the first line of the error if it failed */}
               {shown.status === "running" && (
                 <p className="mt-4 rounded-[3px] bg-paper px-3 py-2 text-sm">
                   Running. {shown.runs.length} runs recorded so far; this page updates by itself.
@@ -191,8 +222,10 @@ export default function ExperimentsPage() {
                 </p>
               )}
 
+              {/* The charts and tables of results */}
               <div className="mt-6"><ExperimentCharts exp={shown} /></div>
 
+              {/* A fold out list of the settings the experiment used */}
               <details className="mt-6 border-t border-line pt-3 text-sm">
                 <summary className="cursor-pointer font-semibold">Settings used</summary>
                 <dl className="num mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-ink-soft">
@@ -208,6 +241,7 @@ export default function ExperimentsPage() {
           )}
         </section>
       </div>
+      {confirmDialog}
     </main>
   );
 }

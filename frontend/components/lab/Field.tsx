@@ -1,5 +1,9 @@
 "use client";
+// WHAT THIS FILE IS FOR: the shared building blocks for forms in the Lab.
+// Text boxes, number boxes, drop down lists, sliders and buttons all live here,
+// so every Lab panel looks and behaves the same way.
 
+// Wraps any form control with a label above it and an optional help note below.
 /** Small labelled form controls shared by the Lab panels. */
 export function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -11,13 +15,16 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
   );
 }
 
+// The common look shared by all input boxes: thin border, white fill, purple outline when in focus.
 const inputCls =
   "w-full rounded-[3px] border border-line bg-white px-2.5 py-1.5 text-sm text-ink num focus:border-quantum focus:outline-none";
 
+// A plain text box with the shared look; it passes every setting straight through.
 export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={`${inputCls} ${props.className ?? ""}`} />;
 }
 
+// A box for whole numbers such as head counts. Clearing it counts as zero.
 export function NumberInput({ value, onChange, min = 0, step = 1, ...rest }:
   { value: number; onChange: (v: number) => void; min?: number; step?: number } &
   Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "min" | "step">) {
@@ -28,6 +35,7 @@ export function NumberInput({ value, onChange, min = 0, step = 1, ...rest }:
   );
 }
 
+// Used where a blank has its own meaning, such as "work out the travel time for me".
 /** A number box that can be left empty, meaning "no value" (null). */
 export function OptionalNumberInput({ value, onChange, placeholder, min = 0, step = 1 }:
   { value: number | null; onChange: (v: number | null) => void; placeholder?: string; min?: number; step?: number }) {
@@ -38,6 +46,7 @@ export function OptionalNumberInput({ value, onChange, placeholder, min = 0, ste
   );
 }
 
+// A drop down list. It hands back a number or text, matching the kind of value it was given.
 export function Select<T extends string | number>({ value, onChange, options, disabled }:
   { value: T; onChange: (v: T) => void; options: { value: T; label: string }[]; disabled?: boolean }) {
   return (
@@ -52,6 +61,7 @@ export function Select<T extends string | number>({ value, onChange, options, di
   );
 }
 
+// A sliding control with the current value printed beside it, optionally formatted.
 export function Slider({ value, onChange, min, max, step, format }:
   { value: number; onChange: (v: number) => void; min: number; max: number; step: number; format?: (v: number) => string }) {
   return (
@@ -63,10 +73,13 @@ export function Slider({ value, onChange, min, max, step, format }:
   );
 }
 
+// A button in one of several colour styles: main action, warning, green go, plain or faint.
+// Disabled buttons fade out and show a "not allowed" pointer.
 export function Button({ variant = "secondary", className = "", ...props }:
-  React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "danger" | "ghost" | "green" }) {
+  React.ComponentProps<"button"> & { variant?: "primary" | "secondary" | "danger" | "destructive" | "ghost" | "green" }) {
   const styles = {
     primary: "bg-ink text-white hover:bg-ink/90 border-ink",
+    destructive: "bg-wine text-white hover:bg-wine/90 border-wine",
     green: "bg-exit text-white hover:bg-exit/90 border-exit",
     secondary: "bg-white text-ink border-line hover:border-ink/50",
     danger: "bg-white text-wine border-line hover:border-wine",

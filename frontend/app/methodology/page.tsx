@@ -1,10 +1,15 @@
+// WHAT THIS FILE IS FOR: the Methodology page, a long written explanation of the study.
+// It covers the venue model, the score, each solver, how QAOA (the quantum method) works, results and limits.
+// It is fixed text with a table of real IBM hardware results; nothing is loaded from the server.
 import type { Metadata } from "next";
 
+// The page title and description shown in browser tabs and search results.
 export const metadata: Metadata = {
   title: "Methodology | Q-Flow",
   description: "How Q-Flow models crowd routing, how QAOA works, how results are measured, and the limits of the study.",
 };
 
+// The page's sections, used to build the "On this page" menu of jump links.
 const SECTIONS = [
   { id: "question", label: "Research question" },
   { id: "model", label: "The model" },
@@ -18,6 +23,7 @@ const SECTIONS = [
   { id: "tools", label: "Tools" },
 ];
 
+// The real hardware results shown in the table, one row per venue size. Figures are percentages.
 /** Recorded on 9 October 2026, ibm_fez, QAOA depth 2, 4,096 shots, one run per size. */
 const HARDWARE = [
   { qubits: 4, venue: "Micro Hall", ideal: 66, noisy: 56, hw: 62, best: 24.9, random: 6.3, valid: 88.9, gates: "25" },
@@ -26,10 +32,12 @@ const HARDWARE = [
   { qubits: 10, venue: "Exhibition Centre", ideal: 61, noisy: 32, hw: 23, best: 1.4, random: 0.1, valid: 38.9, gates: "211" },
 ];
 
+// A section heading with a rule above it. Its id lets the menu links jump straight to it.
 function H2({ id, children }: { id: string; children: React.ReactNode }) {
   return <h2 id={id} className="scroll-mt-6 border-t-2 border-ink pt-3 font-display text-2xl font-bold">{children}</h2>;
 }
 
+// A boxed block for showing a formula in a fixed width font, keeping its line breaks.
 function Formula({ children }: { children: React.ReactNode }) {
   return (
     <pre className="overflow-x-auto rounded-[3px] border border-line bg-white px-4 py-3 font-mono text-[13px] leading-relaxed">
@@ -38,9 +46,11 @@ function Formula({ children }: { children: React.ReactNode }) {
   );
 }
 
+// The Methodology page: a heading, a sticky menu of sections on the left, and the article on the right.
 export default function MethodologyPage() {
   return (
     <main className="mx-auto max-w-[1440px] px-5 pb-20 pt-10">
+      {/* Page title and introduction */}
       <h1 className="max-w-[22ch] font-display text-[clamp(2rem,4.5vw,3.4rem)] font-bold leading-[1.05]">
         Methodology, QAOA and limitations
       </h1>
@@ -50,6 +60,7 @@ export default function MethodologyPage() {
       </p>
 
       <div className="mt-10 grid items-start gap-10 lg:grid-cols-[220px_minmax(0,1fr)]">
+        {/* The "On this page" menu, which stays in view while scrolling on wide screens */}
         <nav aria-label="On this page" className="lg:sticky lg:top-6">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">On this page</p>
           <ol className="space-y-1.5 text-sm">
@@ -59,6 +70,7 @@ export default function MethodologyPage() {
           </ol>
         </nav>
 
+        {/* The article itself, one section per menu entry */}
         <article className="min-w-0 max-w-[1100px] space-y-12 leading-relaxed [&_h2]:max-w-[78ch] [&_li]:max-w-[78ch] [&_p]:max-w-[78ch] [&_pre]:max-w-[78ch]">
           {/* ------------------------------------------------------------ question */}
           <section className="space-y-3">
@@ -218,6 +230,7 @@ export default function MethodologyPage() {
               Recorded on 9 October 2026 on ibm_fez, QAOA depth 2, 4,096 shots, one run per size. Single runs vary,
               so these figures are a snapshot, not averages. Typical answer quality is shown for each mode.
             </p>
+            {/* The results table, built from the HARDWARE list above; it scrolls sideways on small screens */}
             <div className="overflow-x-auto rounded-[4px] border border-line bg-panel">
               <table className="w-full min-w-[720px] border-collapse text-sm">
                 <thead>

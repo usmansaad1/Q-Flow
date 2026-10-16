@@ -1,3 +1,7 @@
+# WHAT THIS FILE IS FOR: the front door of the Q-Flow backend server.
+# The web app talks to it through an API (a set of web addresses that answer with data).
+# It lists every address: venues, presets, single optimisation runs, run history and experiments.
+# The real maths lives in app.core; this file only passes requests to it and returns answers.
 """Q-Flow API. The optimisation engine lives in app.core and never imports FastAPI."""
 from contextlib import asynccontextmanager
 from dataclasses import asdict as dc_asdict
@@ -17,6 +21,8 @@ from app.core.solvers.base import SolverResult
 from app.core.solvers import CLASSICAL_SOLVERS, QUANTUM_SOLVERS, solve_exact, solve_naive
 from app.core.venue import Venue
 
+# Runs once when the server starts up, before it answers any request.
+# It tidies up experiments that were cut off when the server last stopped.
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # An experiment left "running" by a previous backend process would otherwise stay
@@ -25,6 +31,9 @@ async def lifespan(_app: FastAPI):
     yield
 
 
+# Creates the server itself and sets its name and version number.
+# The CORS setting lets the web app running on port 3000 of this computer talk to it.
+# It also plugs in the extra IBM hardware addresses from hardware_routes.py.
 app = FastAPI(title="Q-Flow Optimisation Engine", version="0.5.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
@@ -36,6 +45,9 @@ app.include_router(hardware_router)
 
 
 
+# Turns a request into a routing problem the solvers can work on.
+# The venue comes either from a ready made preset or from a venue the user drew.
+# Sends back a clear error if the venue is missing or cannot be solved.
 def build_problem(req: ProblemRequest) -> RoutingProblem:
     if req.preset_id:
         try:
@@ -54,11 +66,14 @@ def build_problem(req: ProblemRequest) -> RoutingProblem:
         raise HTTPException(422, str(e))
 
 
+# A simple "are you alive?" check that always answers healthy while the server runs.
 @app.get("/health")
 def health():
     return {"status": "healthy", "service": "q-flow-backend"}
 
 
+# Lists the built in example venues, with how many people and qubits each one needs.
+# A qubit is one unit of a quantum computer; bigger venues need more of them.
 @app.get("/api/v1/presets")
 def list_presets():
     out = []
@@ -69,6 +84,7 @@ def list_presets():
     return out
 
 
+# Sends back the full layout of one example venue, or "not found" if the name is wrong.
 @app.get("/api/v1/presets/{preset_id}")
 def get_preset_venue(preset_id: str):
     try:
@@ -77,11 +93,13 @@ def get_preset_venue(preset_id: str):
         raise HTTPException(404, str(e))
 
 
+# Opens the database where venues, runs and experiments are kept.
 def get_store() -> Storage:
     return Storage()  # reads QFLOW_DB each time, so tests can point it elsewhere
 
 
 # ============================================================ saved venues
+# Checks a venue before saving it, and refuses one the optimiser could not solve.
 def _checked_venue(req: VenueSaveRequest) -> dict:
     """Only venues the optimiser can actually solve are saved."""
     venue = Venue.from_dict(req.venue.model_dump())
@@ -92,6 +110,8 @@ def _checked_venue(req: VenueSaveRequest) -> dict:
     return venue.to_dict()
 
 
+# Makes a short summary card for a saved venue: name, last change, qubits and total people.
+# If the venue cannot be solved any more, the qubit count is left empty.
 def _venue_summary(v: dict) -> dict:
     try:
         qubits = RoutingProblem(Venue.from_dict(v)).num_qubits
@@ -101,11 +121,13 @@ def _venue_summary(v: dict) -> dict:
             "total_people": sum(g["size"] for g in v.get("crowd_groups", []))}
 
 
+# Lists every venue the user has saved, as short summaries.
 @app.get("/api/v1/venues")
 def list_saved_venues():
     return [_venue_summary(v) for v in get_store().list_venues()]
 
 
+# Sends back the full details of one saved venue.
 @app.get("/api/v1/venues/{venue_id}")
 def get_saved_venue(venue_id: int):
     v = get_store().get_venue(venue_id)
@@ -114,12 +136,14 @@ def get_saved_venue(venue_id: int):
     return v
 
 
+# Saves a new venue after checking it, then returns its summary.
 @app.post("/api/v1/venues", status_code=201)
 def save_venue(req: VenueSaveRequest):
     data = _checked_venue(req)
     return _venue_summary(get_store().get_venue(get_store().save_venue(data)))
 
 
+# Replaces a saved venue with an edited version, after checking it.
 @app.put("/api/v1/venues/{venue_id}")
 def update_saved_venue(venue_id: int, req: VenueSaveRequest):
     data = _checked_venue(req)
@@ -128,20 +152,27 @@ def update_saved_venue(venue_id: int, req: VenueSaveRequest):
     return _venue_summary(get_store().get_venue(venue_id))
 
 
+# Deletes a saved venue for good.
 @app.delete("/api/v1/venues/{venue_id}", status_code=204)
 def delete_saved_venue(venue_id: int):
     if not get_store().delete_venue(venue_id):
         raise HTTPException(404, f"Saved venue {venue_id} not found.")
 
 
+# Describes the maths problem for a venue without solving it.
+# The app uses this to show how big the problem is before a run.
 @app.post("/api/v1/problem")
 def describe_problem(req: ProblemRequest):
     """Formulation summary: decision variables, qubits, resources, penalty."""
     return build_problem(req).describe()
 
 
+# Solves one venue with the chosen method and reports how good the answer is.
+# Methods are classical (normal computer) or QAOA, a quantum method run on a simulator.
+# It also compares against a simple "everyone takes the nearest exit" plan.
 @app.post("/api/v1/optimize")
 def optimize(req: OptimizeRequest):
+    # Step 1: build the problem and run the chosen solver.
     problem = build_problem(req)
     if req.solver == "ibm_hardware":
         raise HTTPException(400, "IBM hardware runs are background jobs. Use /api/v1/hardware/jobs instead.")
@@ -159,6 +190,8 @@ def optimize(req: OptimizeRequest):
     except ValueError as e:
         raise HTTPException(422, str(e))
 
+    # Step 2: score the answer against the simple plan and the perfect answer.
+    # A score of 1.0 means as good as the perfect answer; 0 means as bad as the worst.
     # Before vs after, plus quality relative to the exact optimum where it is computable.
     baseline = solve_naive(problem)
     quality = None
@@ -182,6 +215,7 @@ def optimize(req: OptimizeRequest):
     except ValueError:
         pass  # too large for exhaustive search
 
+    # Step 3: put the reply together for the app.
     response = {
         "problem": problem.describe(),
         "result": result.to_dict(problem),
@@ -197,6 +231,7 @@ def optimize(req: OptimizeRequest):
         response["typical"] = {**typical.to_dict(problem), "probability": ml["probability"]}
     response["result"]["extra"].pop("history", None)  # large and unused by the app
 
+    # Step 4: save the run to Run history, unless the caller asked not to.
     # Every Lab run is recorded (proposal Section 12: "solver results").
     if not req.record:
         return response
@@ -208,11 +243,13 @@ def optimize(req: OptimizeRequest):
     return response
 
 
+# Lists every past Lab run from Run history.
 @app.get("/api/v1/lab-runs")
 def list_lab_runs():
     return get_store().list_lab_runs()
 
 
+# Sends back the full saved details of one past run, so the app can show it again.
 @app.get("/api/v1/lab-runs/{run_id}")
 def get_lab_run(run_id: int):
     r = get_store().get_lab_run(run_id)
@@ -221,6 +258,7 @@ def get_lab_run(run_id: int):
     return r
 
 
+# Deletes one past run from Run history.
 @app.delete("/api/v1/lab-runs/{run_id}", status_code=204)
 def delete_lab_run(run_id: int):
     if not get_store().delete_lab_run(run_id):
@@ -228,6 +266,8 @@ def delete_lab_run(run_id: int):
 
 
 # =============================================================== experiments
+# Runs a whole experiment quietly in the background.
+# Any failure is already written to the experiment's record, so it is not raised again here.
 def _execute(kind: str, config, exp_id: int) -> None:
     try:
         run_experiment(kind, config, get_store(), log=lambda _: None, exp_id=exp_id)
@@ -235,11 +275,14 @@ def _execute(kind: str, config, exp_id: int) -> None:
         pass  # failure details are already stored on the experiment row
 
 
+# Lists every experiment, whether finished, running or failed.
 @app.get("/api/v1/experiments")
 def list_experiments():
     return get_store().list_experiments()
 
 
+# Starts a new experiment, such as a scaling or noise study, and replies straight away.
+# "Quick" mode uses smaller settings; the request can also override single settings.
 @app.post("/api/v1/experiments", status_code=202)
 def start_experiment(req: ExperimentRequest, background: BackgroundTasks):
     """Starts an experiment in the background. Poll GET /api/v1/experiments/{id} for status."""
@@ -253,6 +296,8 @@ def start_experiment(req: ExperimentRequest, background: BackgroundTasks):
     return {"id": exp_id, "status": "running"}
 
 
+# Sends back one experiment and its individual runs.
+# Setting "details" to true also includes the full data of each run.
 @app.get("/api/v1/experiments/{exp_id}")
 def get_experiment(exp_id: int, details: bool = False):
     store = get_store()
@@ -262,6 +307,8 @@ def get_experiment(exp_id: int, details: bool = False):
     return {**exp, "runs": store.get_runs(exp_id, include_details=details)}
 
 
+# Draws the chart for a finished experiment and sends it as a picture.
+# It refuses if the experiment is still running or has failed.
 @app.get("/api/v1/experiments/{exp_id}/chart")
 def experiment_chart(exp_id: int):
     store = get_store()
@@ -274,6 +321,7 @@ def experiment_chart(exp_id: int):
     return FileResponse(paths["chart"], media_type="image/png")
 
 
+# Deletes an experiment and its runs.
 @app.delete("/api/v1/experiments/{exp_id}", status_code=204)
 def delete_experiment(exp_id: int):
     if not get_store().delete_experiment(exp_id):

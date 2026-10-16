@@ -1,14 +1,20 @@
 "use client";
+// WHAT THIS FILE IS FOR: the toolbar above the venue editor in the Lab.
+// It lets users pick a venue, rename it, save it, add areas and exits,
+// and use a "More" menu to download, open, reset or delete venues.
 
 import { useEffect, useRef, useState } from "react";
 
 import type { PresetInfo, SavedVenueSummary } from "@/lib/types";
 import { Button, TextInput } from "./Field";
 
+// Where the venue being edited came from: a built in example, one the user saved, or a brand new one.
 export type VenueSource = { kind: "preset"; id: string } | { kind: "saved"; id: number } | { kind: "new" };
 
+// Turns a venue source into one short text label, like "preset:stadium", for the drop down list.
 export const sourceKey = (s: VenueSource) => (s.kind === "new" ? "new" : `${s.kind}:${s.id}`);
 
+// Everything the toolbar needs: the venue lists, the current name and save state, and an action per button.
 interface Props {
   presets: PresetInfo[];
   saved: SavedVenueSummary[];
@@ -30,6 +36,7 @@ interface Props {
   onDelete: () => void;
 }
 
+// The small status message and its colour for each save state, shown beside the Save button.
 const STATUS_TEXT: Record<Props["status"], { text: string; cls: string }> = {
   saved: { text: "Saved", cls: "text-exit" },
   unsaved: { text: "Unsaved changes", cls: "text-amber" },
@@ -38,6 +45,7 @@ const STATUS_TEXT: Record<Props["status"], { text: string; cls: string }> = {
   "unchanged preset": { text: "Preset venue", cls: "text-ink-soft" },
 };
 
+// Draws the toolbar. It also keeps track of whether the "More" menu is open.
 export default function VenueBar(p: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDetailsElement>(null);
@@ -56,6 +64,7 @@ export default function VenueBar(p: Props) {
     return () => document.removeEventListener("mousedown", close);
   }, [menuOpen]);
 
+  // Closes the "More" menu first, then carries out the chosen menu action.
   const runMenu = (fn: () => void) => {
     if (menuRef.current) menuRef.current.open = false;
     setMenuOpen(false);
@@ -67,6 +76,7 @@ export default function VenueBar(p: Props) {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {/* Venue picker: built in examples first, then the user's saved venues */}
       <select aria-label="Venue" value={sourceKey(p.source)}
         onChange={(e) => {
           const [kind, id] = e.target.value.split(":");
@@ -84,6 +94,7 @@ export default function VenueBar(p: Props) {
         </optgroup>
       </select>
 
+      {/* Venue name box, Save button and save status */}
       <div className="w-56"><TextInput aria-label="Venue name" value={p.name} onChange={(e) => p.onName(e.target.value)} /></div>
 
       <Button variant="primary" disabled={!p.canSave || p.saving} onClick={p.onSave}
@@ -92,10 +103,12 @@ export default function VenueBar(p: Props) {
       </Button>
       <span className={`text-xs ${st.cls}`} aria-live="polite">{st.text}</span>
 
+      {/* Buttons to add new places to the map */}
       <span className="mx-1 h-6 w-px bg-line" />
       <Button onClick={p.onAddArea}>Add area</Button>
       <Button onClick={p.onAddExit}>Add exit</Button>
 
+      {/* The "More" menu with less common actions */}
       <details ref={menuRef} className="relative" onToggle={(e) => setMenuOpen((e.target as HTMLDetailsElement).open)}>
         <summary className="cursor-pointer list-none rounded-[3px] border border-transparent px-3 py-1.5 text-sm font-medium text-ink-soft hover:text-ink [&::-webkit-details-marker]:hidden">
           More ▾
@@ -109,12 +122,14 @@ export default function VenueBar(p: Props) {
           {isSaved && <MenuItem onClick={() => runMenu(p.onDelete)} danger>Delete this saved venue</MenuItem>}
         </div>
       </details>
+      {/* Hidden file picker, opened by "Open venue file" in the menu */}
       <input ref={fileRef} type="file" accept=".json,application/json" className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) p.onImport(f); e.target.value = ""; }} />
     </div>
   );
 }
 
+// One clickable line inside the "More" menu. Risky actions are shown in red.
 function MenuItem({ children, onClick, disabled, danger }:
   { children: React.ReactNode; onClick: () => void; disabled?: boolean; danger?: boolean }) {
   return (

@@ -1,6 +1,10 @@
+// WHAT THIS FILE IS FOR: converts a venue between the server's format and the drawing the user edits.
+// The venue editor uses it to load a venue onto the canvas and to check and send it back.
+// It also splits a crowd into smaller groups.
 import type { Edge, Node } from "@xyflow/react";
 import type { LocationType, VenueDTO } from "./types";
 
+// The details shown on one box (a place or an exit) in the venue drawing.
 /** Data carried by each node on the venue canvas. */
 export type PlaceData = {
   name: string;
@@ -12,9 +16,11 @@ export type PlaceData = {
   util?: number;
 };
 
+// Measured in metres per second.
 /** Walking speed the backend uses to estimate travel time when none is given. */
 export const WALK_SPEED = 1.3;
 
+// The details shown on one line (a walkway) in the venue drawing.
 export type RouteData = {
   capacity: number;
   length: number;
@@ -23,9 +29,11 @@ export type RouteData = {
   util?: number;
 };
 
+// A box on the drawing (a place or an exit) and a line between two boxes (a route).
 export type PlaceNode = Node<PlaceData, "place" | "exit">;
 export type RouteEdge = Edge<RouteData, "route">;
 
+// The kinds of place offered in the editor's menu, with friendly labels.
 export const PLACE_TYPES: { value: LocationType; label: string }[] = [
   { value: "zone", label: "Zone" },
   { value: "hall", label: "Hall" },
@@ -36,16 +44,21 @@ export const PLACE_TYPES: { value: LocationType; label: string }[] = [
   { value: "exit", label: "Exit" },
 ];
 
+// Makes a fresh unique id for a box or line, from the current time plus a running counter.
 let counter = 0;
 export const newId = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${(counter++).toString(36)}`;
 
+// Turns a venue from the server into boxes and lines for the drawing.
+// Places without a saved position are laid out in a simple grid, four per row.
 export function venueToGraph(v: VenueDTO): { nodes: PlaceNode[]; edges: RouteEdge[] } {
+  // Step 1: add up the people and groups starting in each place.
   const people = new Map<string, number>();
   const groupCount = new Map<string, number>();
   v.crowd_groups.forEach((g) => {
     people.set(g.location, (people.get(g.location) ?? 0) + g.size);
     groupCount.set(g.location, (groupCount.get(g.location) ?? 0) + 1);
   });
+  // Step 2: make one box per place, remembering which box belongs to which place name.
   const idByName = new Map<string, string>();
   const nodes: PlaceNode[] = v.locations.map((l, i) => {
     const id = newId("n");
@@ -62,6 +75,7 @@ export function venueToGraph(v: VenueDTO): { nodes: PlaceNode[]; edges: RouteEdg
       },
     };
   });
+  // Step 3: make one line per route, joining the right two boxes.
   const edges: RouteEdge[] = v.routes.map((r) => ({
     id: newId("e"),
     type: "route",
@@ -72,6 +86,7 @@ export function venueToGraph(v: VenueDTO): { nodes: PlaceNode[]; edges: RouteEdg
   return { nodes, edges };
 }
 
+// The outcome of checking the drawing: the venue (if valid), any problems found, and a route lookup.
 export interface GraphConversion {
   venue: VenueDTO | null;
   errors: string[];
@@ -79,8 +94,11 @@ export interface GraphConversion {
   routeIds: Map<string, string>;
 }
 
+// Reads the user's drawing back into a venue the server understands.
+// If anything is wrong it returns a list of friendly problem messages instead of a venue.
 /** Turn the canvas into the backend's venue format, with plain language validation. */
 export function graphToVenue(name: string, nodes: PlaceNode[], edges: RouteEdge[]): GraphConversion {
+  // Step 1: check names, exits and that at least one area has people.
   const errors: string[] = [];
   const nameById = new Map(nodes.map((n) => [n.id, n.data.name.trim()]));
   const names = [...nameById.values()];
@@ -92,6 +110,7 @@ export function graphToVenue(name: string, nodes: PlaceNode[], edges: RouteEdge[
   const crowds = nodes.filter((n) => n.data.locationType !== "exit" && n.data.people > 0);
   if (!crowds.length) errors.push("Put people in at least one area.");
 
+  // Step 2: check every route for duplicates and sensible numbers, and record its server name.
   const routeIds = new Map<string, string>();
   const seen = new Set<string>();
   for (const e of edges) {
@@ -103,6 +122,7 @@ export function graphToVenue(name: string, nodes: PlaceNode[], edges: RouteEdge[
     if (e.data!.travelTime != null && !(e.data!.travelTime > 0)) errors.push(`Route ${a} to ${b} needs a travel time above 0, or leave it empty.`);
     routeIds.set(e.id, `${a}|${b}`);
   }
+  // Step 3: check that every crowd can be split as asked and has a way out.
   for (const n of crowds) {
     if (n.data.groups > n.data.people) errors.push(`${n.data.name} can't be split into more groups than it has people.`);
     if (!edges.some((e) => e.source === n.id || e.target === n.id))
@@ -110,6 +130,7 @@ export function graphToVenue(name: string, nodes: PlaceNode[], edges: RouteEdge[
   }
   if (errors.length) return { venue: null, errors, routeIds };
 
+  // Step 4: all checks passed, so build the venue: places, routes and crowd groups.
   return {
     errors,
     routeIds,
@@ -134,6 +155,7 @@ export function graphToVenue(name: string, nodes: PlaceNode[], edges: RouteEdge[
   };
 }
 
+// Kept small because each extra group adds qubits (the basic units of a quantum computer).
 /** Maximum number of groups one area's crowd can be split into. */
 export const MAX_SPLIT = 4;
 

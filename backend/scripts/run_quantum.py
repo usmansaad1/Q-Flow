@@ -1,3 +1,6 @@
+# WHAT THIS FILE IS FOR: a text demo comparing the quantum method (QAOA) with the exact classical answer.
+# For each preset venue it runs QAOA on a perfect simulator, with simulated noise, and
+# optionally on a simulated IBM machine, then prints a table. Run it from a terminal.
 """
 Stage 2 demo: classical vs ideal QAOA vs noisy QAOA on every preset.
 
@@ -9,6 +12,7 @@ Stage 2 demo: classical vs ideal QAOA vs noisy QAOA on every preset.
 import argparse
 import warnings
 
+# Hide library warnings so the printed table stays readable.
 warnings.filterwarnings("ignore")
 
 from app.core.presets import PRESETS, get_preset
@@ -16,6 +20,9 @@ from app.core.problem import RoutingProblem
 from app.core.solvers import solve_exact, solve_qaoa_ideal, solve_qaoa_noisy
 
 
+# Reads the options typed on the command line, runs every chosen venue and prints the results.
+# The table shows the chance of the best plan, the chance of a valid plan, the average
+# quality (AR, approximation ratio), circuit size and time, with random guessing for comparison.
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--reps", type=int, default=2)
@@ -25,6 +32,7 @@ def main():
     ap.add_argument("--skip-fake", action="store_true")
     a = ap.parse_args()
 
+    # Solve each venue: exact answer first, then the quantum runs.
     for pid in a.presets:
         problem = RoutingProblem(get_preset(pid))
         exact = solve_exact(problem)
@@ -37,6 +45,7 @@ def main():
             runs.append((f"Noisy ({a.fake_backend})", solve_qaoa_noisy(
                 problem, noise="fake_backend", fake_backend=a.fake_backend, reps=a.reps, shots=a.shots)))
 
+        # Print the comparison table for this venue.
         rb = runs[0][1].extra["metrics"]["random_baseline"]
         print(f"\n=== {problem.venue.name}: {problem.num_qubits} qubits, p = {a.reps}")
         print(f"{'method':<22}{'P(optimal)':>11}{'P(valid)':>10}{'mean AR':>9}{'best=opt':>10}{'2q gates':>10}{'time s':>8}")
@@ -49,5 +58,6 @@ def main():
         print(f"{'Random guessing':<22}{rb['prob_optimal']:>11.3f}{rb['prob_feasible']:>10.3f}{rb['mean_approx_ratio']:>9.3f}")
 
 
+# Runs the demo only when this file is started directly.
 if __name__ == "__main__":
     main()

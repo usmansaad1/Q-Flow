@@ -1,11 +1,16 @@
 "use client";
+// WHAT THIS FILE IS FOR: the side by side results table in the Lab.
+// It compares every solver that has run against a simple "nearest exit" plan,
+// on answer quality, overcrowding and time taken.
 
 import { pct, num, seconds } from "@/lib/format";
 import type { OptimizeResponse, SolverResultDTO } from "@/lib/types";
 import { DEVICE_MODELS, SOLVERS, type SolverKey } from "./solvers";
 
+// The latest result for each solver that has been run, looked up by solver name.
 type Runs = Partial<Record<SolverKey, OptimizeResponse>>;
 
+// One column of the table: a solver (or the nearest exit plan) and its result.
 interface Column {
   key: string;
   label: string;
@@ -15,6 +20,8 @@ interface Column {
   baseline?: boolean;
 }
 
+// Picks the three quality numbers for a column: typical quality, chance of the best plan, share of valid plans.
+// Quantum solvers give many answers, so they use averages; classical gives one exact answer.
 function quality(c: Column) {
   const q = c.resp.quality;
   if (!q) return null;
@@ -24,6 +31,7 @@ function quality(c: Column) {
     : { typical: q.approximation_ratio, chance: q.is_optimal ? 1 : 0, valid: 1 };
 }
 
+// Gives a short label such as "IBM Torino" or "2x errors" for the noisy column heading.
 /** Noise setting a noisy run actually used, read from the run itself so a reopened run is labelled correctly. */
 function noiseLabel(resp: OptimizeResponse): string {
   const cfg = resp.result.extra.config as { noise?: string; noise_level?: number; fake_backend?: string } | undefined;
@@ -34,7 +42,9 @@ function noiseLabel(resp: OptimizeResponse): string {
   return `${cfg.noise_level}x errors`;
 }
 
+// Builds and draws the comparison table, or a friendly "no results yet" box.
 export default function ResultsBoard({ runs }: { runs: Runs }) {
+  // Step 1: find which solvers have results; if none, show the empty message.
   const keys = SOLVERS.map((s) => s.key).filter((k) => runs[k]);
   if (!keys.length) {
     return (
@@ -46,6 +56,7 @@ export default function ResultsBoard({ runs }: { runs: Runs }) {
       </section>
     );
   }
+  // Step 2: build the columns. The nearest exit plan comes first, as a simple yardstick.
   const first = runs[keys[0]]!;
   const cols: Column[] = [
     { key: "baseline", label: "Nearest exit", quantum: false, result: first.baseline, resp: first, baseline: true },
@@ -57,8 +68,11 @@ export default function ResultsBoard({ runs }: { runs: Runs }) {
       return { key: k, label, quantum: s.quantum, result: runs[k]!.result, resp: runs[k]! };
     }),
   ];
+  // How often pure random guessing would hit the best plan, if any run reported it.
   const random = keys.map((k) => runs[k]!.quality?.random_baseline).find(Boolean);
 
+  // Step 3: list the table rows. Each row has a title, an optional note, and a rule for filling each cell.
+  // The "__section" row is a divider that marks where the plan details begin.
   const rows: { label: string; note?: string; cell: (c: Column) => React.ReactNode; strong?: boolean }[] = [
     {
       label: "Typical answer quality", strong: true,
@@ -112,6 +126,7 @@ export default function ResultsBoard({ runs }: { runs: Runs }) {
     { label: "Two qubit gates", cell: (c) => c.result.extra.circuit?.transpiled.two_qubit_gates ?? "" },
   ];
 
+  // Step 4: draw the table.
   return (
     <section className="overflow-x-auto rounded-[4px] border border-line bg-panel">
       <table className="w-full min-w-[720px] border-collapse text-sm">
@@ -119,6 +134,7 @@ export default function ResultsBoard({ runs }: { runs: Runs }) {
           <span className="font-display text-lg font-bold">Comparison</span>
           <span className="ml-3 text-sm text-ink-soft">{first.problem.venue}, {first.problem.num_qubits} decision variables</span>
         </caption>
+        {/* Header row: one column title per solver, quantum ones in purple */}
         <thead>
           <tr className="border-b border-line">
             <th className="w-[30%] px-5 py-2 text-left font-medium text-ink-soft">Measure</th>
@@ -129,6 +145,7 @@ export default function ResultsBoard({ runs }: { runs: Runs }) {
             ))}
           </tr>
         </thead>
+        {/* Body rows, skipping any row that would be blank for every column */}
         <tbody>
           {rows.filter((r) => cols.some((c) => { const v = r.cell(c); return v !== "" && v != null; })).map((r) => r.label === "__section" ? (
             <tr key="section" className="border-b border-line/70 bg-paper">

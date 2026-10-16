@@ -1,3 +1,6 @@
+# WHAT THIS FILE IS FOR: the web addresses for running a problem on a real IBM quantum computer.
+# The app uses them to list IBM machines, test a run, send a job and check on it later.
+# Finished results are saved to Run history like any other run.
 """
 Stage 5 routes. A real IBM run is a background job: submit it, then poll until IBM
 finishes. Queues can take minutes or hours, so no web request waits for them.
@@ -18,9 +21,12 @@ from app.core.solvers.naive import solve_naive
 from app.core.storage import Storage
 from app.core.venue import Venue
 
+# A group of addresses that all start with /api/v1/hardware. main.py plugs it into the server.
 router = APIRouter(prefix="/api/v1/hardware", tags=["IBM hardware"])
 
 
+# The shape of a request for an IBM run: the venue, problem settings, quantum settings
+# and, optionally, which IBM machine to use.
 class HardwareRequest(BaseModel):
     venue: VenueIn
     settings: ProblemSettings = ProblemSettings()
@@ -28,6 +34,8 @@ class HardwareRequest(BaseModel):
     device: Optional[str] = None  # None lets IBM pick the least busy device
 
 
+# Turns a stored venue and its settings back into a routing problem the solvers can use.
+# Sends back a clear error if the venue cannot be solved.
 def _build(venue: dict, settings: dict) -> RoutingProblem:
     s = ProblemSettings(**settings)
     try:
@@ -37,6 +45,8 @@ def _build(venue: dict, settings: dict) -> RoutingProblem:
         raise HTTPException(422, str(e))
 
 
+# Packs an IBM result into a full reply, scored against the simple nearest exit plan
+# and the perfect answer. Also adds the answer IBM gave most often.
 def _assemble(problem: RoutingProblem, result: SolverResult) -> dict:
     """The same response shape /api/v1/optimize returns, so the Lab shows it unchanged."""
     baseline = solve_naive(problem)
@@ -67,6 +77,8 @@ def _assemble(problem: RoutingProblem, result: SolverResult) -> dict:
     }
 
 
+# Collects a finished IBM job's answer, scores it and saves it in two places.
+# Saving it on the job means later checks never need to contact IBM again.
 def _finish(job_id: str, row: dict) -> dict:
     """IBM says the job is done: compute the answer once, save it to Run history, keep it."""
     p = row["payload"]
@@ -82,6 +94,8 @@ def _finish(job_id: str, row: dict) -> dict:
     return response
 
 
+# Lists the IBM quantum machines available to this account.
+# Answers "service unavailable" if IBM cannot be reached or is not set up.
 @router.get("/devices")
 def devices():
     try:
@@ -90,6 +104,8 @@ def devices():
         raise HTTPException(503, str(e))
 
 
+# Prepares an IBM run without sending it, so the user can check it first.
+# Replies with what the hardware module reports, plus the qubits (quantum computer units) needed.
 @router.post("/dry-run")
 def dry_run(req: HardwareRequest):
     problem = _build(req.venue.model_dump(), req.settings.model_dump())
@@ -102,6 +118,8 @@ def dry_run(req: HardwareRequest):
     return {**info, "qubits": problem.num_qubits}
 
 
+# Sends a real job to IBM and records it here, then replies at once with its job number.
+# The app then checks on the job using the address below.
 @router.post("/jobs", status_code=202)
 def submit_job(req: HardwareRequest):
     problem = _build(req.venue.model_dump(), req.settings.model_dump())
@@ -119,6 +137,8 @@ def submit_job(req: HardwareRequest):
     return {"job_id": meta["job_id"], "backend": meta["backend"], "status": "SUBMITTED"}
 
 
+# Checks on an IBM job. The app calls this again and again until the job ends.
+# It replies with the saved answer, an error, or the job's current place in IBM's queue.
 @router.get("/jobs/{job_id}")
 def get_job(job_id: str):
     store = Storage()
@@ -129,6 +149,7 @@ def get_job(job_id: str):
         return {**row["response"], "status": "DONE"}
     if row["error"]:
         return {"status": "ERROR", "error": row["error"], "backend": row["backend"], "job_id": job_id}
+    # Not finished yet as far as we know, so ask IBM for the latest status.
     try:
         live = hardware.job_status(job_id)
     except hardware.HardwareUnavailable as e:

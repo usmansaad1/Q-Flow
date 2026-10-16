@@ -1,3 +1,7 @@
+# WHAT THIS FILE IS FOR: runs the four research experiments that compare quantum and classical planning.
+# Each experiment builds venues, solves them with several methods and saves every result.
+# QAOA is the quantum method used here; a qubit is one yes or no choice it works on.
+# It is started from the scripts folder or from the web dashboard.
 """
 The four experiments from the Q-Flow proposal.
 
@@ -29,10 +33,13 @@ from app.core.solvers.base import SolverResult
 from app.core.solvers.quantum import optimise_parameters, solve_qaoa_ideal, solve_qaoa_noisy
 from app.core.storage import Storage
 
+# Any function that takes a line of progress text, such as print.
 Progress = Callable[[str], None]
 
 
 # ================================================================ configs
+# Settings for Experiment 1: which problem sizes to try, how many random venues per size,
+# the quantum circuit depth, the number of samples (shots) and the noise strength.
 @dataclass
 class ScalingConfig:
     sizes: list[int] = field(default_factory=lambda: [4, 6, 8, 10, 12])
@@ -42,6 +49,8 @@ class ScalingConfig:
     noise_level: float = 1.0
 
 
+# Settings for Experiment 2: which venues, which noise strengths, and which simulated
+# copies of real IBM machines ("fake backends") to test.
 @dataclass
 class NoiseConfig:
     presets: list[str] = field(default_factory=lambda: list(PRESETS))
@@ -51,6 +60,7 @@ class NoiseConfig:
     shots: int = 4096
 
 
+# Settings for Experiment 3: which venues and which circuit depths (layers) to try.
 @dataclass
 class DepthConfig:
     presets: list[str] = field(default_factory=lambda: list(PRESETS))
@@ -59,6 +69,7 @@ class DepthConfig:
     shots: int = 4096
 
 
+# Settings for Experiment 4: which venues to compare on, plus an optional simulated IBM machine.
 @dataclass
 class VersusConfig:
     presets: list[str] = field(default_factory=lambda: list(PRESETS))
@@ -68,8 +79,10 @@ class VersusConfig:
     fake_backend: str | None = "FakeTorino"
 
 
+# Looks up the settings type for each experiment by its short name.
 CONFIGS = {"scaling": ScalingConfig, "noise": NoiseConfig, "depth": DepthConfig, "versus": VersusConfig}
 
+# The readable title shown for each experiment.
 TITLES = {
     "scaling": "Exp 1: QAOA quality vs problem size",
     "noise": "Exp 2: Effect of quantum noise",
@@ -78,6 +91,7 @@ TITLES = {
 }
 
 
+# Gives cut down settings for a quick trial run, using fewer and smaller venues.
 def quick_config(kind: str):
     """Small settings for a fast smoke run (about a minute in total)."""
     return {
@@ -89,10 +103,13 @@ def quick_config(kind: str):
 
 
 # ================================================================ records
+# Turns one solver answer into a row for the database, scored against the best known plan.
+# Quantum answers bring sampling statistics and circuit size; classical ones bring overcrowding details.
 def make_record(exp_id: int, instance: str, problem: RoutingProblem, method: str,
                 result: SolverResult, reference: SolverResult, noise_level: float | None = None) -> dict:
     """Flatten a SolverResult into a storage row. Classical answers are deterministic,
     so their 'probability of optimum' is simply 1 or 0."""
+    # Step 1: compare this answer's score ("energy", lower is better) with the best and worst valid plans.
     e_opt = reference.extra["optimal_energy"]
     e_worst = reference.extra["worst_feasible_energy"]
     span = (e_worst - e_opt) or 1.0
@@ -103,6 +120,7 @@ def make_record(exp_id: int, instance: str, problem: RoutingProblem, method: str
         solver=result.solver, energy=energy, optimal_energy=e_opt, runtime_s=result.runtime_s,
         best_is_optimal=int(is_opt), noise_level=noise_level,
     )
+    # Step 2: add the extra figures that only quantum answers have.
     m = result.extra.get("metrics")
     if m:  # quantum
         circ = result.extra["circuit"]["transpiled"]
@@ -117,6 +135,7 @@ def make_record(exp_id: int, instance: str, problem: RoutingProblem, method: str
             details={"parameters": result.extra["parameters"], "top_bitstrings": m["top_bitstrings"][:5],
                      "most_likely": m["most_likely"], "evaluations": result.extra["evaluations"]},
         )
+    # Step 3: for classical answers, work out the same quality figures from the single plan.
     else:  # classical
         feasible = result.evaluation["feasible"]
         rec.update(
@@ -130,6 +149,8 @@ def make_record(exp_id: int, instance: str, problem: RoutingProblem, method: str
     return rec
 
 
+# Groups runs by the thing being varied (size, noise, depth or venue) and by method,
+# then gives the average and spread of each quality figure for every group.
 def summarise(runs: list[dict], x_key: str) -> list[dict]:
     """Mean and population standard deviation per (x value, method)."""
     groups: dict[tuple, list[dict]] = defaultdict(list)
@@ -148,11 +169,14 @@ def summarise(runs: list[dict], x_key: str) -> list[dict]:
     return out
 
 
+# Helps sort a mix of numbers and names: numbers come first, in number order.
 def _sortable(v):
     return (0, v) if isinstance(v, (int, float)) else (1, str(v))
 
 
 # ============================================================ experiments
+# Runs the quantum method twice on one venue, once perfect and once with noise,
+# using the same tuned settings, then saves both results and prints a short line.
 def _quantum_pair(store, exp_id, label, problem, reference, reps, shots, noise_level, log, trained=None):
     trained = trained or optimise_parameters(problem, reps)
     ideal = solve_qaoa_ideal(problem, reps=reps, shots=shots, trained=trained, reference=reference)
@@ -164,6 +188,8 @@ def _quantum_pair(store, exp_id, label, problem, reference, reps, shots, noise_l
         f"noisy P(opt)={noisy.extra['metrics']['prob_optimal']:.3f}")
 
 
+# Experiment 1: for each size, makes several random venues and solves each one
+# with exact, CP SAT (a classical solver from Google) and the quantum method.
 def run_scaling(store: Storage, exp_id: int, cfg: ScalingConfig, log: Progress) -> list[dict]:
     for size in cfg.sizes:
         if size % 2:
@@ -179,6 +205,8 @@ def run_scaling(store: Storage, exp_id: int, cfg: ScalingConfig, log: Progress) 
     return summarise(store.get_runs(exp_id), "num_qubits")
 
 
+# Experiment 2: tunes the quantum method once per venue, then reruns it at each noise
+# strength and on each simulated IBM machine, so only the noise changes.
 def run_noise(store: Storage, exp_id: int, cfg: NoiseConfig, log: Progress) -> list[dict]:
     for pid in cfg.presets:
         problem = RoutingProblem(get_preset(pid))
@@ -198,6 +226,7 @@ def run_noise(store: Storage, exp_id: int, cfg: NoiseConfig, log: Progress) -> l
     return summarise(store.get_runs(exp_id), "noise_level")
 
 
+# Experiment 3: runs the quantum method at each circuit depth, perfect and noisy, on each venue.
 def run_depth(store: Storage, exp_id: int, cfg: DepthConfig, log: Progress) -> list[dict]:
     for pid in cfg.presets:
         problem = RoutingProblem(get_preset(pid))
@@ -210,6 +239,8 @@ def run_depth(store: Storage, exp_id: int, cfg: DepthConfig, log: Progress) -> l
     return summarise(store.get_runs(exp_id), "reps")
 
 
+# Experiment 4: solves every preset venue with the simple nearest exit rule, the classical
+# solvers and the quantum method (perfect, noisy and optionally on a simulated IBM machine).
 def run_versus(store: Storage, exp_id: int, cfg: VersusConfig, log: Progress) -> list[dict]:
     for pid in cfg.presets:
         problem = RoutingProblem(get_preset(pid))
@@ -228,9 +259,12 @@ def run_versus(store: Storage, exp_id: int, cfg: VersusConfig, log: Progress) ->
     return summarise(store.get_runs(exp_id), "instance")
 
 
+# Looks up the function that runs each experiment by its short name.
 RUNNERS = {"scaling": run_scaling, "noise": run_noise, "depth": run_depth, "versus": run_versus}
 
 
+# The main entry point: starts any of the four experiments and records how it ended.
+# If something goes wrong, the error is saved on the experiment before it is reported.
 def run_experiment(kind: str, config=None, store: Storage | None = None, log: Progress = print,
                    exp_id: int | None = None) -> int:
     """Create (or reuse) an experiment row, run it, store the summary. Returns its id."""

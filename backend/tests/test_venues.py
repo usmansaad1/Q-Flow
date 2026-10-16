@@ -1,8 +1,12 @@
+# WHAT THIS FILE IS FOR: automatic checks for venues the user saves in the Lab,
+# for walking times on routes, and for how crowds are split across routes.
+# Several tests talk to the web API (the address the website uses) through a test client.
 """Saved venues and travel time handling."""
 import warnings
 
 import pytest
 
+# Hide library warnings during the tests.
 warnings.filterwarnings("ignore")
 
 from app.core.presets import get_preset
@@ -10,6 +14,7 @@ from app.core.problem import RoutingProblem
 from app.core.venue import DEFAULT_WALK_SPEED, Route, Venue
 
 
+# Checks that when no walking time is given, one is estimated from length but not saved as if typed in.
 def test_estimated_travel_time_is_not_stored_as_given():
     r = Route("A", "B", capacity=100, length=13)
     assert r.travel_time is None
@@ -18,6 +23,7 @@ def test_estimated_travel_time_is_not_stored_as_given():
     assert all(route["travel_time"] is None for route in d["routes"])
 
 
+# Checks that a walking time typed in by the user is used instead of the estimate.
 def test_given_travel_time_is_used():
     v = Venue("t").add_location("A", "zone").add_location("E", "exit")
     v.add_route("A", "E", capacity=100, length=10, travel_time=60)
@@ -26,6 +32,7 @@ def test_given_travel_time_is_used():
     assert p.options[0].path.travel_time == 60
 
 
+# Checks that a walking time of zero (or less) is refused.
 def test_non_positive_travel_time_rejected():
     v = Venue("t").add_location("A", "zone").add_location("E", "exit")
     v.add_route("A", "E", capacity=100, length=10, travel_time=0)
@@ -34,6 +41,7 @@ def test_non_positive_travel_time_rejected():
         RoutingProblem(v)
 
 
+# Gives tests a pretend browser that calls the web API, using a fresh empty database.
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("QFLOW_DB", str(tmp_path / "venues.db"))
@@ -42,6 +50,7 @@ def client(tmp_path, monkeypatch):
     return TestClient(app)
 
 
+# Checks the full life of a saved venue: save, read back unchanged, rename, solve, delete.
 def test_saved_venue_lifecycle(client):
     venue = client.get("/api/v1/presets/small_event_hall").json()
     venue["name"] = "My hall"
@@ -71,6 +80,7 @@ def test_saved_venue_lifecycle(client):
     assert client.delete(f"/api/v1/venues/{vid}").status_code == 404
 
 
+# Checks that a venue with no exits is refused with a clear message and nothing is saved.
 def test_unsolvable_venue_is_not_saved(client):
     bad = {"name": "No exits", "locations": [{"id": "A", "location_type": "zone"}],
            "routes": [], "crowd_groups": [{"group_id": "g", "location": "A", "size": 10}]}
@@ -79,6 +89,7 @@ def test_unsolvable_venue_is_not_saved(client):
     assert client.get("/api/v1/venues").json() == []
 
 
+# Builds a venue whose 300 people are split into a chosen number of nearly equal groups.
 def _entrance_venue(groups):
     """300 people at an entrance whose two roads carry 200 each, like the Lab example."""
     v = Venue("split").add_location("Entrance", "entrance")
@@ -90,6 +101,7 @@ def _entrance_venue(groups):
     return RoutingProblem(v)
 
 
+# Checks that splitting one crowd into two groups lets the best plan use both exits and avoid overcrowding.
 def test_splitting_a_crowd_lets_it_use_several_routes():
     from app.core.solvers import solve_exact
     whole, split = _entrance_venue(1), _entrance_venue(2)
@@ -100,6 +112,7 @@ def test_splitting_a_crowd_lets_it_use_several_routes():
     assert {r["exit"] for r in best.routes(split)} == {"Exit A", "Exit B"}
 
 
+# Checks that the second route offered to a group is a wide detour, not a short but narrow road.
 def test_detour_around_a_crowded_road_is_offered():
     """Like the Lab example: the third route should avoid the crowded direct road."""
     v = Venue("detour").add_location("Start", "entrance").add_location("Hub", "corridor")
@@ -113,6 +126,8 @@ def test_detour_around_a_crowded_road_is_offered():
     assert second[1] == "Wide"          # not the shorter but too narrow route
 
 
+# Checks that a quantum run from the Lab is saved with its typical answer, can be listed,
+# read back and deleted, and that the bulky history is left out.
 def test_lab_runs_are_saved_with_typical_answer(client):
     r = client.post("/api/v1/optimize", json={"preset_id": "micro_hall", "solver": "qaoa_ideal",
                                               "quantum": {"reps": 1, "shots": 512}}).json()

@@ -1,9 +1,13 @@
 "use client";
+// WHAT THIS FILE IS FOR: the control panel where the user chooses how to solve the venue.
+// It holds the solver choice, quantum settings, IBM hardware options, priority sliders and Run buttons.
+// The Lab page owns all the values; this panel only displays them and reports changes.
 
 import type { HardwareCheck, HardwareDevice, HardwareJobState, ProblemSettings, QuantumSettings } from "@/lib/types";
 import { Button, Field, Select, Slider } from "./Field";
 import { DEVICE_MODELS, QUANTUM_QUBIT_LIMIT, SOLVERS, type SolverKey } from "./solvers";
 
+// The bundle of values and actions for running on a real IBM quantum computer.
 /** IBM hardware controls. Everything here is decided by the page; the panel only shows and asks. */
 export interface HardwareUi {
   devices: HardwareDevice[];
@@ -16,6 +20,8 @@ export interface HardwareUi {
   error: string | null;           // set when IBM is not connected or cannot be reached
 }
 
+// What the panel receives: current choices and settings, the problem size, any reason
+// running is blocked, which solver is running now, and the actions to call.
 interface Props {
   selected: SolverKey;
   onSelect: (k: SolverKey) => void;
@@ -31,6 +37,7 @@ interface Props {
   hw: HardwareUi;
 }
 
+// Turns IBM's job status into a friendly sentence, such as the place in the queue.
 function hardwareStatus(s: HardwareJobState | null): string {
   if (!s || s.status === "SUBMITTED") return "Sending the job to IBM.";
   if (s.status === "QUEUED") {
@@ -40,10 +47,14 @@ function hardwareStatus(s: HardwareJobState | null): string {
   return `IBM status: ${s.status.toLowerCase()}.`;
 }
 
+// Draws the whole solver panel.
 export default function SolverPanel(p: Props) {
+  // Works out a few facts first: is the venue too big for quantum, which solver is picked,
+  // and which IBM devices to offer in the device list.
   const tooBig = p.qubits != null && p.qubits > QUANTUM_QUBIT_LIMIT;
   const sel = SOLVERS.find((s) => s.key === p.selected)!;
   const w = p.settings.weights;
+  // Changes one priority weight, such as "avoid congestion", and keeps the others as they are.
   const setW = (k: keyof typeof w, v: number) => p.onSettings({ ...p.settings, weights: { ...w, [k]: v } });
   const isHardware = p.selected === "ibm_hardware";
   const hwBlocked = isHardware && !!p.hw.error;
@@ -56,6 +67,7 @@ export default function SolverPanel(p: Props) {
 
   return (
     <div className="space-y-4">
+      {/* Solver choice: one option per method, quantum ones greyed out if the venue is too big */}
       <fieldset>
         <legend className="font-display text-base font-bold">Solver</legend>
         <div className="mt-2 space-y-1">
@@ -84,6 +96,7 @@ export default function SolverPanel(p: Props) {
         )}
       </fieldset>
 
+      {/* Quantum settings, shown only for quantum solvers. Shots means how many times the circuit is run and read */}
       {sel.quantum && (
         <div className="space-y-3 border-t border-line pt-3">
           <Field label="QAOA depth p" hint="More layers fit the problem better but add gates, and gates add errors.">
@@ -93,6 +106,7 @@ export default function SolverPanel(p: Props) {
             <Select<number> value={p.quantum.shots} onChange={(v) => p.onQuantum({ ...p.quantum, shots: v })}
               options={[1024, 4096, 8192].map((n) => ({ value: n, label: n.toLocaleString() }))} />
           </Field>
+          {/* Noise options for the noisy simulator: a simple error dial, or a copy of a real IBM machine */}
           {p.selected === "qaoa_noisy" && (
             <>
               <Field label="Noise model">
@@ -114,6 +128,7 @@ export default function SolverPanel(p: Props) {
               )}
             </>
           )}
+          {/* IBM hardware options: pick a machine and do a free trial check before spending quota */}
           {isHardware && (
             <>
               <Field label="Device" hint="Automatic picks the shortest queue among devices with enough qubits.">
@@ -138,6 +153,7 @@ export default function SolverPanel(p: Props) {
         </div>
       )}
 
+      {/* Fold out sliders that set what the plan should care about most */}
       <details className="border-t border-line pt-3">
         <summary className="cursor-pointer text-sm font-semibold">Optimisation priorities</summary>
         <div className="mt-3 space-y-3">
@@ -153,6 +169,7 @@ export default function SolverPanel(p: Props) {
         </div>
       </details>
 
+      {/* Run buttons, then any warning or progress message */}
       <div className="flex gap-2 border-t border-line pt-3">
         <Button variant="primary" className="flex-1"
           disabled={!!p.blocked || !!p.running || !sel.available || (sel.quantum && tooBig) || hwBlocked}

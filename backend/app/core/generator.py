@@ -1,3 +1,6 @@
+# WHAT THIS FILE IS FOR: invents random test venues of any chosen size.
+# The experiments use these to see how each solving method copes as the puzzle grows.
+# The same seed number always produces the same venue, so results can be repeated.
 """
 Random venue generator for scaling experiments.
 
@@ -17,6 +20,9 @@ import random
 from app.core.venue import Venue
 
 
+# Creates a random venue with the requested number of crowds, each in its own zone.
+# Every zone gets a short route to one exit and a longer route to another.
+# Most zones lean towards one "popular" exit, which creates the crowding to be solved.
 def generate_venue(num_groups: int, seed: int, num_exits: int | None = None,
                    tightness: float = 0.85) -> Venue:
     """
@@ -24,11 +30,14 @@ def generate_venue(num_groups: int, seed: int, num_exits: int | None = None,
                Below 1 gives exits spare room (0.85 means about 18% above an even share);
                above 1 makes them smaller than an even share.
     """
+    # Step 1: check the request, start the random number maker from the seed,
+    # and pick a number of exits (between 2 and 4) if none was given.
     if num_groups < 1:
         raise ValueError("num_groups must be at least 1.")
     rng = random.Random(seed)
     num_exits = num_exits or max(2, min(4, (num_groups + 1) // 2 + 1))
 
+    # Step 2: name the venue, pick random crowd sizes (80 to 200 people) and size the exits.
     v = Venue(f"Synthetic {2 * num_groups}q #{seed}",
               description=f"Generated: {num_groups} groups, {num_exits} exits, seed {seed}.")
     exits = [f"Exit {chr(65 + e)}" for e in range(num_exits)]
@@ -40,6 +49,8 @@ def generate_venue(num_groups: int, seed: int, num_exits: int | None = None,
         cap = int(round(even_share * (1 / tightness) * rng.uniform(0.9, 1.1), -1))
         v.add_location(name, "exit", capacity=cap, x=760, y=60 + e * (380 / max(num_exits - 1, 1)))
 
+    # Step 3: add each zone with its crowd and its two routes to exits.
+    # At least about 70% of zones have the popular exit as their nearest one.
     # A popular exit most zones are close to creates the congestion to resolve.
     popular = rng.randrange(num_exits)
     for g in range(num_groups):

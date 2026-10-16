@@ -1,3 +1,6 @@
+# WHAT THIS FILE IS FOR: finds the guaranteed best plan by checking every valid plan one by one.
+# It is the "answer key" that the quantum results are marked against.
+# It also records the worst valid plan, so scores can be shown on a 0 to 100% scale.
 """
 Exact classical solver: enumerates every feasible plan (one path per group).
 
@@ -18,6 +21,9 @@ from app.core.problem import RoutingProblem
 from app.core.solvers.base import SolverResult
 
 
+# Lists every plan where each group has exactly one route, scores them all, and keeps the best.
+# Refuses to run if there are more plans than max_states, to avoid running out of memory.
+# The score ("energy") is the plan's total cost: lower means a better evacuation.
 def solve_exact(problem: RoutingProblem, max_states: int = 2_000_000) -> SolverResult:
     t0 = time.perf_counter()
     groups = list(problem.group_options.values())
@@ -25,14 +31,17 @@ def solve_exact(problem: RoutingProblem, max_states: int = 2_000_000) -> SolverR
     if n_states > max_states:
         raise ValueError(f"{n_states} feasible plans exceed the exact solver limit ({max_states}).")
 
+    # Step 1: fetch the cost table. QUBO is the standard "yes or no choices with costs" format.
     Q, off = problem.qubo_matrix()
     n = problem.num_variables
     # Build all feasible bitstrings at once.
     X = np.zeros((n_states, n))
     for row, combo in enumerate(itertools.product(*groups)):
         X[row, list(combo)] = 1
+    # Step 2: score every plan in one go using the cost table.
     energies = np.einsum("ki,ij,kj->k", X, Q, X) + off
 
+    # Step 3: pick the cheapest plan, note the dearest one, and count any ties for first place.
     best = int(np.argmin(energies))
     worst = float(energies.max())
     runtime = time.perf_counter() - t0

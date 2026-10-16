@@ -1,3 +1,7 @@
+# WHAT THIS FILE IS FOR: four ready made example venues, from tiny to medium sized.
+# Users can pick one from the website instead of drawing their own venue.
+# Each is sized so the quantum version of the puzzle needs 4, 6, 8 or 10 qubits.
+# (A qubit is the basic memory unit of a quantum computer; one qubit per route choice.)
 """
 Preset venues. Sizes are chosen so that with 2 candidate paths per group the
 qubit counts are 4, 6, 8 and 10, matching Experiment 1 in the proposal.
@@ -6,6 +10,8 @@ Coordinates are for the frontend canvas (roughly 0 to 800 by 0 to 500).
 from app.core.venue import Venue
 
 
+# The smallest example: one hall and a lobby, two crowds and two exits.
+# Small enough to run on a real IBM quantum computer.
 def micro_hall() -> Venue:
     v = Venue("Micro Hall", description="Two groups, two exits. Small enough for real IBM hardware (4 qubits).")
     v.add_location("Hall", "hall", x=200, y=250)
@@ -21,6 +27,8 @@ def micro_hall() -> Venue:
     return v
 
 
+# A small event space: a main hall, a stage, a foyer and a side corridor.
+# Three crowds share two exits.
 def small_event_hall() -> Venue:
     v = Venue("Small Event Hall", description="Four zones, two exits, three crowd groups (6 qubits).")
     v.add_location("Main Hall", "hall", x=180, y=170)
@@ -42,6 +50,8 @@ def small_event_hall() -> Venue:
     return v
 
 
+# A concert venue: the floor, two stands and a balcony.
+# Four crowds funnel through two concourses towards three gates.
 def concert_venue() -> Venue:
     v = Venue("Concert Venue", description="Four crowd sections competing for three gates (8 qubits).")
     v.add_location("Floor", "zone", x=400, y=260)
@@ -70,6 +80,8 @@ def concert_venue() -> Venue:
     return v
 
 
+# The largest example: three halls, an atrium and a food court.
+# Five crowds of visitors leave through three exits.
 def exhibition_centre() -> Venue:
     v = Venue("Exhibition Centre", description="Visitors in five areas leaving through three exits (10 qubits).")
     v.add_location("Hall 1", "hall", x=120, y=150)
@@ -100,6 +112,7 @@ def exhibition_centre() -> Venue:
     return v
 
 
+# The menu of examples: a short code name for each, linked to the function that builds it.
 PRESETS = {
     "micro_hall": micro_hall,
     "small_event_hall": small_event_hall,
@@ -108,6 +121,8 @@ PRESETS = {
 }
 
 
+# Builds a fresh copy of the example venue with the given code name.
+# An unknown name gives an error listing the valid choices.
 def get_preset(preset_id: str) -> Venue:
     if preset_id not in PRESETS:
         raise KeyError(f"Unknown preset '{preset_id}'. Options: {', '.join(PRESETS)}")

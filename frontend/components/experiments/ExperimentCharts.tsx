@@ -1,5 +1,9 @@
 "use client";
 
+// WHAT THIS FILE IS FOR: draws the charts for one experiment on the Experiments page.
+// Each kind of experiment gets its own set of line or bar charts, built from the stored runs.
+// QAOA is the quantum method under test; qubits are the basic units of a quantum computer.
+
 import { useState } from "react";
 import {
   Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -8,13 +12,16 @@ import {
 import { pct, seconds } from "@/lib/format";
 import type { ExperimentDetail, RunRow } from "@/lib/types";
 
+// The chart colours: purple for ideal quantum, red for noisy quantum, grey for random, navy for classical.
 const C = {
   ideal: "#4B3FD1", noisy: "#D9482B", random: "#9AA6B5", classical: "#15233F", naive: "#E2A11B",
   series: ["#15233F", "#0E7490", "#B45309", "#6B7280", "#7A1F3D", "#4D7C0F"],
   devices: ["#7A1F3D", "#0E7490", "#6B7280"],
 };
+// The small grey text style for chart axis labels.
 const AXIS = { fontSize: 11, fill: "#5A6478" };
 
+// The measurements from a run that a chart can plot.
 type Metric = keyof Pick<RunRow, "prob_optimal" | "prob_feasible" | "mean_approx_ratio" | "random_prob_optimal" |
   "random_mean_ratio" | "two_qubit_gates" | "runtime_s">;
 
@@ -23,8 +30,11 @@ const short = (v: string) => v.replace(" Venue", "").replace(" Centre", "").repl
 /** "FakeTorino" is Qiskit's name for the IBM Torino noise model. */
 const device = (m: string) => m.replace("Fake", "IBM ");
 
+// The average of a list of numbers.
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 
+// Groups the runs into a table ready for a chart, averaging repeated runs.
+// Number labels along the bottom are sorted from small to large.
 /** One row per x value; one column per series, averaged over runs. */
 function table(runs: RunRow[], x: (r: RunRow) => string | number, series: (r: RunRow) => string | null, metric: Metric) {
   const acc = new Map<string | number, Map<string, number[]>>();
@@ -41,8 +51,10 @@ function table(runs: RunRow[], x: (r: RunRow) => string | number, series: (r: Ru
     .map(([xv, row]) => ({ x: xv, ...Object.fromEntries([...row].map(([k, v]) => [k, mean(v)])) }));
 }
 
+// Lists every line or bar name found in a chart table, ignoring the bottom axis column.
 const seriesNames = (rows: Record<string, unknown>[]) => [...new Set(rows.flatMap((r) => Object.keys(r).filter((k) => k !== "x")))];
 
+// A frame for one chart, with a bold title and an optional small note underneath.
 function Panel({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
   return (
     <figure className="min-w-0">
@@ -55,6 +67,8 @@ function Panel({ title, note, children }: { title: string; note?: string; childr
   );
 }
 
+// Draws a line chart, one line per series, usually in percentages.
+// Options allow a log scale (for very small values), a zoomed scale, and dashed lines.
 function Lines({ data, xLabel, percent = true, log = false, fit = false, colors, dashed = [] }: {
   data: Record<string, unknown>[]; xLabel: string; percent?: boolean; log?: boolean; fit?: boolean;
   colors: Record<string, string> | string[]; dashed?: string[];
@@ -83,6 +97,7 @@ function Lines({ data, xLabel, percent = true, log = false, fit = false, colors,
   );
 }
 
+// Draws a grouped bar chart, showing either percentages or times.
 function Bars({ data, colors, log = false, percent = true }: {
   data: Record<string, unknown>[]; colors: Record<string, string> | string[]; log?: boolean; percent?: boolean;
 }) {
@@ -105,10 +120,13 @@ function Bars({ data, colors, log = false, percent = true }: {
 }
 
 // ================================================================ per kind
+// Charts for the "Problem size" experiment: how quantum results change as more qubits are needed.
+// Ideal and noisy quantum are compared with random guessing.
 function Scaling({ runs }: { runs: RunRow[] }) {
   const q = runs.filter((r) => r.method.startsWith("QAOA"));
   const ideal = q.filter((r) => r.method === "QAOA ideal");
   const label = (r: RunRow) => (r.method === "QAOA ideal" ? "QAOA ideal" : "QAOA noisy");
+  // Builds a chart table for quantum runs and adds a random guessing line beside it.
   const withRandom = (metric: Metric, rmetric: Metric) => {
     const a = table(q, (r) => r.num_qubits, label, metric);
     const b = table(ideal, (r) => r.num_qubits, () => "Random guessing", rmetric);
@@ -130,6 +148,8 @@ function Scaling({ runs }: { runs: RunRow[] }) {
   );
 }
 
+// Charts for the "Quantum noise" experiment: answer quality as errors rise.
+// It also shows bars for simulated copies of real IBM processors, if they were included.
 function Noise({ runs }: { runs: RunRow[] }) {
   const depol = runs.filter((r) => r.method === "Depolarising");
   const devices = [...new Set(runs.filter((r) => r.method !== "Depolarising").map((r) => r.method))];
@@ -153,6 +173,8 @@ function Noise({ runs }: { runs: RunRow[] }) {
   );
 }
 
+// Charts for the "Circuit depth" experiment: whether more QAOA layers help, with and without noise.
+// Buttons above the charts pick which venue to show.
 function Depth({ runs }: { runs: RunRow[] }) {
   const venues = [...new Set(runs.map((r) => r.instance))];
   const [picked, setVenue] = useState(venues[0]);
@@ -162,6 +184,7 @@ function Depth({ runs }: { runs: RunRow[] }) {
   const colors = { Ideal: C.ideal, Noisy: C.noisy };
   return (
     <div>
+      {/* One button per venue */}
       <div className="mb-4 flex flex-wrap gap-1" role="group" aria-label="Venue">
         {venues.map((v) => (
           <button key={v} onClick={() => setVenue(v)}
@@ -186,6 +209,8 @@ function Depth({ runs }: { runs: RunRow[] }) {
   );
 }
 
+// Charts for the "Quantum versus classical" experiment: answer quality and run time for every solver.
+// Each solver keeps a fixed colour; the naive nearest exit plan is left out of the time chart.
 function Versus({ runs }: { runs: RunRow[] }) {
   const methods = [...new Set(runs.map((r) => r.method))];
   const colorOf = (m: string) => m.startsWith("Naive") ? C.naive : m.startsWith("Classical exact") ? C.classical
@@ -205,6 +230,7 @@ function Versus({ runs }: { runs: RunRow[] }) {
   );
 }
 
+// Picks the right set of charts for the experiment's kind, or a short note if there are no runs yet.
 export default function ExperimentCharts({ exp }: { exp: ExperimentDetail }) {
   if (!exp.runs.length) return <p className="text-sm text-ink-soft">No runs recorded yet.</p>;
   switch (exp.kind) {

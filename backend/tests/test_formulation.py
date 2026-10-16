@@ -1,3 +1,6 @@
+# WHAT THIS FILE IS FOR: automatic checks that the planning problem is written down correctly.
+# The problem is turned into a QUBO (a scoring formula over yes or no choices) that both
+# classical and quantum solvers use. These tests prove the formula and the solvers agree.
 """
 Guarantees the quantum stage depends on. If any of these fail, quantum vs
 classical comparisons are not trustworthy.
@@ -8,6 +11,7 @@ import warnings
 import numpy as np
 import pytest
 
+# Hide library warnings during the tests.
 warnings.filterwarnings("ignore")
 
 from app.core.presets import PRESETS, get_preset
@@ -15,19 +19,23 @@ from app.core.problem import RoutingProblem, Weights
 from app.core.solvers import solve_exact, solve_cpsat, solve_naive
 from app.core.venue import Venue
 
+# The names of all ready made venues.
 PRESET_IDS = list(PRESETS)
 
 
+# Supplies each ready made venue's problem in turn, so a test using it runs once per venue.
 @pytest.fixture(params=PRESET_IDS)
 def problem(request):
     return RoutingProblem(get_preset(request.param))
 
 
+# Checks that the four ready made venues need exactly 4, 6, 8 and 10 qubits (yes or no choices).
 def test_qubit_counts_match_experiment_plan():
     counts = {pid: RoutingProblem(get_preset(pid)).num_qubits for pid in PRESET_IDS}
     assert counts == {"micro_hall": 4, "small_event_hall": 6, "concert_venue": 8, "exhibition_centre": 10}
 
 
+# Checks that the lowest score among every possible plan is the exact solver's answer, and is a valid plan.
 def test_qubo_ground_state_is_exact_optimum(problem):
     """Brute force over ALL 2^n bitstrings, infeasible ones included."""
     energies = problem.all_energies()
@@ -38,6 +46,7 @@ def test_qubo_ground_state_is_exact_optimum(problem):
     assert problem.is_feasible(bits)
 
 
+# Checks that a plan breaking the one route per group rule always scores worse than the best valid plan.
 def test_every_infeasible_state_is_worse_than_optimum(problem):
     energies = problem.all_energies()
     opt = solve_exact(problem).extra["optimal_energy"]
@@ -48,6 +57,7 @@ def test_every_infeasible_state_is_worse_than_optimum(problem):
             assert e > opt
 
 
+# Checks that two ways of scoring a plan give the same number, and that valid plans carry no penalty.
 def test_energy_matrix_and_evaluator_agree(problem):
     energies = problem.all_energies()
     rng = random.Random(0)
@@ -61,20 +71,24 @@ def test_energy_matrix_and_evaluator_agree(problem):
             assert ev.penalty == pytest.approx(0, abs=1e-9)
 
 
+# Checks that the CP SAT solver finds a plan just as good as the exact solver.
 def test_cpsat_matches_exact(problem):
     assert solve_cpsat(problem).evaluation["energy"] == pytest.approx(
         solve_exact(problem).evaluation["energy"], abs=1e-6)
 
 
+# Checks that the optimised plan is never worse than sending everyone to the nearest exit.
 def test_optimisation_never_worse_than_naive(problem):
     assert solve_exact(problem).evaluation["energy"] <= solve_naive(problem).evaluation["energy"] + 1e-12
 
 
+# Checks that on every preset the nearest exit plan overcrowds somewhere, and the best plan does not.
 def test_optimum_removes_capacity_violations_on_presets(problem):
     assert solve_naive(problem).evaluation["capacity_violations"] > 0
     assert solve_exact(problem).evaluation["capacity_violations"] == 0
 
 
+# Checks that every route offered ends at an exit and never walks through another exit on the way.
 def test_paths_never_pass_through_an_exit(problem):
     exits = {e.id for e in problem.venue.exits}
     for o in problem.options:
@@ -82,6 +96,7 @@ def test_paths_never_pass_through_an_exit(problem):
         assert not exits.intersection(o.path.nodes[:-1])
 
 
+# Checks that the overcrowding score is exactly right for two groups sharing one exit.
 def test_overflow_fit_is_exact_for_two_groups():
     v = Venue("two")
     v.add_location("A", "zone").add_location("B", "zone").add_location("E", "exit")
@@ -97,18 +112,21 @@ def test_overflow_fit_is_exact_for_two_groups():
     assert p.evaluate([1, 1]).components["overflow"] == pytest.approx(50 / 150, abs=1e-9)
 
 
+# Checks that saving a venue as data and loading it back gives the same problem.
 def test_round_trip_serialisation():
     v = get_preset("concert_venue")
     v2 = Venue.from_dict(v.to_dict())
     assert RoutingProblem(v).linear == pytest.approx(RoutingProblem(v2).linear)
 
 
+# Checks that a venue that cannot be solved (here, one room and no exit) is refused.
 def test_validation_rejects_bad_venues():
     v = Venue("bad").add_location("A", "zone")
     with pytest.raises(ValueError):
         RoutingProblem(v)
 
 
+# Checks that the copy of the problem handed to Qiskit (IBM's quantum toolkit) scores plans identically.
 def test_qiskit_export_matches_internal_qubo(problem):
     qp = problem.to_quadratic_program()
     assert qp.get_num_vars() == problem.num_qubits          # no slack variables added
@@ -119,6 +137,8 @@ def test_qiskit_export_matches_internal_qubo(problem):
         assert qp.objective.evaluate(bits) == pytest.approx(problem.energy(bits), abs=1e-9)
 
 
+# Checks the web API (the address the website talks to) end to end: list venues, solve one,
+# get an overcrowding free plan, and refuse real IBM hardware on this route.
 def test_api_round_trip():
     from fastapi.testclient import TestClient
     from app.main import app
@@ -135,6 +155,7 @@ def test_api_round_trip():
     assert c.post("/api/v1/optimize", json={"preset_id": "micro_hall", "solver": "ibm_hardware"}).status_code == 400
 
 
+# Builds a tiny two exit venue with chosen sizes and limits, and scores the only possible plan.
 def _two_exit_venue(size_a, size_b, gate_a_cap, gate_b_cap, corridor_cap):
     """Zone A reaches Gate A only through a corridor; zone B goes straight to Gate B."""
     v = Venue("over")
@@ -147,6 +168,7 @@ def _two_exit_venue(size_a, size_b, gate_a_cap, gate_b_cap, corridor_cap):
     return p.evaluate([1, 1])
 
 
+# Checks that people too many for both a corridor and its gate are counted once, not twice.
 def test_people_over_capacity_counts_the_same_people_once():
     # 780 people through a 500 corridor to a 500 gate: the same 280 people are too many twice.
     ev = _two_exit_venue(780, 10, gate_a_cap=500, gate_b_cap=100, corridor_cap=500)
@@ -154,6 +176,7 @@ def test_people_over_capacity_counts_the_same_people_once():
     assert ev.total_excess == 560
 
 
+# Checks that overcrowding at two different gates adds up, since different people are affected.
 def test_people_over_capacity_adds_separate_overloads():
     # 280 too many at Gate A and, separately, 50 too many at Gate B: different people.
     ev = _two_exit_venue(780, 150, gate_a_cap=500, gate_b_cap=100, corridor_cap=10_000)
@@ -161,5 +184,6 @@ def test_people_over_capacity_adds_separate_overloads():
     assert ev.capacity_violations == 2
 
 
+# Checks that nobody is counted as over capacity when every route and gate has room.
 def test_people_over_capacity_is_zero_when_everything_fits():
     assert _two_exit_venue(100, 50, 500, 100, 500).people_over_capacity == 0

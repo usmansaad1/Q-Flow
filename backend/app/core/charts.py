@@ -1,3 +1,6 @@
+# WHAT THIS FILE IS FOR: turns stored experiment results into files for the written report.
+# It writes spreadsheet files (CSV, plain text tables) and one chart picture (PNG) per experiment.
+# The experiment script and the web API call export_experiment at the bottom of this file.
 """
 Charts (PNG) and CSV exports for stored experiments.
 
@@ -15,12 +18,15 @@ from statistics import mean, pstdev
 
 import matplotlib
 
+# Draw charts straight to files, without needing a screen.
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.ticker import MaxNLocator  # noqa: E402
 
 from app.core.storage import Storage  # noqa: E402
 
+# Fixed colours per method so every chart uses the same colour for the same method.
+# Noisy quantum runs are red; simulated real devices take turns from the DEVICE list.
 COLORS = {
     "Classical exact": "#1f2937", "Classical CP SAT": "#6b7280", "Naive (nearest exit)": "#d97706",
     "QAOA ideal": "#2563eb", "Random guessing": "#9ca3af",
@@ -28,10 +34,12 @@ COLORS = {
 NOISY = "#dc2626"
 DEVICE = ["#7c3aed", "#059669", "#db2777"]
 
+# Shared look for all charts: sharp image, light grid, no top and right borders, small text.
 plt.rcParams.update({"figure.dpi": 130, "axes.grid": True, "grid.alpha": 0.3, "axes.spines.top": False,
                      "axes.spines.right": False, "font.size": 9})
 
 
+# Picks the colour for a method's line or bar.
 def _color(method: str, i: int = 0) -> str:
     if method in COLORS:
         return COLORS[method]
@@ -40,6 +48,7 @@ def _color(method: str, i: int = 0) -> str:
     return DEVICE[i % len(DEVICE)]
 
 
+# Averages one figure for each value along the bottom axis, and measures its spread.
 def _agg(runs, key, metric):
     """{x: (mean, std)} for one metric."""
     g = defaultdict(list)
@@ -49,6 +58,7 @@ def _agg(runs, key, metric):
     return {x: (mean(v), pstdev(v) if len(v) > 1 else 0.0) for x, v in sorted(g.items())}
 
 
+# Sorts runs into piles by one field, such as method or venue.
 def _by(runs, field):
     out = defaultdict(list)
     for r in runs:
@@ -56,6 +66,7 @@ def _by(runs, field):
     return out
 
 
+# Draws one line of averages on a chart, with small bars showing the spread at each point.
 def _line(ax, runs, x, metric, label, color, style="-", marker="o"):
     a = _agg(runs, x, metric)
     if not a:
@@ -66,6 +77,8 @@ def _line(ax, runs, x, metric, label, color, style="-", marker="o"):
 
 
 # ================================================================= charts
+# Chart for Experiment 1: three panels showing how quantum quality changes as problems grow,
+# with random guessing shown as a dashed line for comparison.
 def chart_scaling(runs, path):
     quantum = [r for r in runs if r["method"].startswith("QAOA")]
     fig, axes = plt.subplots(1, 3, figsize=(13, 3.8))
@@ -86,9 +99,12 @@ def chart_scaling(runs, path):
     fig.tight_layout(); fig.savefig(path); plt.close(fig)
 
 
+# Chart for Experiment 2: two panels show quality falling as noise rises, one line per venue.
+# The third panel compares perfect, basic noise and simulated real IBM machines as bars.
 def chart_noise(runs, path):
     depol = [r for r in runs if r["method"] == "Depolarising"]
     devices = [r for r in runs if r["method"] != "Depolarising"]
+    # Step 1: the two line panels, one coloured line per venue.
     fig, axes = plt.subplots(1, 3, figsize=(13, 3.8))
     for i, (inst, rs) in enumerate(_by(depol, "instance").items()):
         c = plt.cm.viridis(i / max(len(_by(depol, "instance")) - 1, 1))
@@ -108,6 +124,7 @@ def chart_noise(runs, path):
               ("Depolarising x1", lambda r: r["method"] == "Depolarising" and r["noise_level"] == 1, NOISY)]
     for i, dev in enumerate(sorted({r["method"] for r in devices})):
         series.append((dev, lambda r, d=dev: r["method"] == d, DEVICE[i % len(DEVICE)]))
+    # Step 2: draw a group of bars per venue, one bar per noise setting.
     width = 0.8 / len(series)
     for j, (label, pred, color) in enumerate(series):
         vals = []
@@ -122,6 +139,8 @@ def chart_noise(runs, path):
     fig.tight_layout(); fig.savefig(path); plt.close(fig)
 
 
+# Chart for Experiment 3: how circuit depth affects quality (solid perfect, dashed noisy)
+# and how many two qubit steps (gates) the circuit needs.
 def chart_depth(runs, path):
     fig, axes = plt.subplots(1, 3, figsize=(13, 3.8))
     insts = _by(runs, "instance")
@@ -144,6 +163,8 @@ def chart_depth(runs, path):
     fig.tight_layout(); fig.savefig(path); plt.close(fig)
 
 
+# Chart for Experiment 4: grouped bars per venue comparing every method on quality,
+# chance of the best plan, and running time.
 def chart_versus(runs, path):
     insts = list(_by(runs, "instance"))
     methods = list(dict.fromkeys(r["method"] for r in runs))
@@ -168,10 +189,13 @@ def chart_versus(runs, path):
     fig.tight_layout(rect=(0, 0.07, 1, 1)); fig.savefig(path); plt.close(fig)
 
 
+# Looks up the chart drawing function for each experiment by its short name.
 CHARTS = {"scaling": chart_scaling, "noise": chart_noise, "depth": chart_depth, "versus": chart_versus}
 
 
 # ================================================================= export
+# Writes an experiment's files into a folder: all runs, the summary, and its chart.
+# Returns where each file was saved. Fails if the experiment does not exist.
 def export_experiment(store: Storage, exp_id: int, out_dir: str | Path) -> dict[str, Path]:
     exp = store.get_experiment(exp_id)
     if not exp:
@@ -181,12 +205,14 @@ def export_experiment(store: Storage, exp_id: int, out_dir: str | Path) -> dict[
     runs = store.get_runs(exp_id)
     paths = {}
 
+    # Step 1: one table row per solver run.
     if runs:
         p = out / "runs.csv"
         with p.open("w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=list(runs[0]))
             w.writeheader(); w.writerows(runs)
         paths["runs"] = p
+    # Step 2: the summary table of averages, if the experiment finished.
     rows = (exp.get("summary") or {}).get("rows") or []
     if rows:
         p = out / "summary.csv"
@@ -195,6 +221,7 @@ def export_experiment(store: Storage, exp_id: int, out_dir: str | Path) -> dict[
             w = csv.DictWriter(f, fieldnames=keys)
             w.writeheader(); w.writerows(rows)
         paths["summary"] = p
+    # Step 3: the chart picture for this kind of experiment.
     if runs and exp["kind"] in CHARTS:
         p = out / f"{exp['kind']}.png"
         CHARTS[exp["kind"]](runs, p)

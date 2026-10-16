@@ -1,3 +1,6 @@
+# WHAT THIS FILE IS FOR: a quick text demo of the classical (ordinary computer) planners.
+# For every ready made venue it prints how the simple, exact and CP SAT planners score,
+# then lists the best evacuation route for each crowd group. Run it from a terminal.
 """
 Step 1 demo: before vs after on every preset, using the shared formulation.
 
@@ -6,6 +9,7 @@ Step 1 demo: before vs after on every preset, using the shared formulation.
 """
 import warnings
 
+# Hide library warnings so the printed table stays readable.
 warnings.filterwarnings("ignore")
 
 from app.core.presets import PRESETS
@@ -13,6 +17,8 @@ from app.core.problem import RoutingProblem
 from app.core.solvers import solve_naive, solve_exact, solve_cpsat
 
 
+# Solves each preset venue three ways and prints a comparison table and the best plan.
+# "energy" is the plan's score (lower is better); "over cap" counts people above room capacity.
 def main():
     for pid, factory in PRESETS.items():
         problem = RoutingProblem(factory())
@@ -29,5 +35,6 @@ def main():
             print(f"  {route['group_id']:<22}{route['size']:>4} people  ->  {' > '.join(route['path'])}")
 
 
+# Runs the demo only when this file is started directly.
 if __name__ == "__main__":
     main()

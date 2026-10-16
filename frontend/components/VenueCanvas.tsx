@@ -1,4 +1,8 @@
 "use client";
+// WHAT THIS FILE IS FOR: the interactive venue map, drawn as boxes (areas and exits) joined by lines (routes).
+// In the Lab it is editable: drag boxes and draw new routes. Elsewhere it is view only.
+// When a plan is shown, routes and exits are coloured and thickened by how busy they are.
+// It is built on React Flow, a ready made library for drawing boxes and connecting lines.
 
 import {
   Background, BackgroundVariant, BaseEdge, Controls, EdgeLabelRenderer, Handle,
@@ -10,6 +14,7 @@ import { useMemo } from "react";
 import { loadColor } from "@/lib/format";
 import type { PlaceNode, RouteEdge } from "@/lib/venue";
 
+// How many people a plan sends along each route and through each exit, and how full that makes them.
 export interface PlanLoads {
   /** canvas edge id -> load and utilisation */
   routes: Map<string, { load: number; util: number }>;
@@ -17,6 +22,8 @@ export interface PlanLoads {
   exits: Map<string, { load: number; util: number }>;
 }
 
+// Adds the two connection points to a box: a purple dot to drag from, and a hidden landing spot.
+// The dot is only shown when the map can be edited.
 /**
  * Each node has a visible "drag to connect" dot on its right edge (source) and an
  * invisible centre target. Routes are drawn centre to centre by RouteEdgeView, so
@@ -36,6 +43,7 @@ function Handles({ editable }: { editable: boolean }) {
   );
 }
 
+// Draws an ordinary area box: its name, its type, how many people are there and how many groups.
 function PlaceNodeView({ data, selected }: NodeProps<PlaceNode>) {
   const editable = (data as { editable?: boolean }).editable ?? false;
   const type = data.locationType === "zone" ? null : data.locationType;
@@ -53,6 +61,8 @@ function PlaceNodeView({ data, selected }: NodeProps<PlaceNode>) {
   );
 }
 
+// Draws a green exit sign box. With a plan shown, a coloured ring shows how full the exit is,
+// and the text reads "load of capacity", in bold when it is over capacity.
 function ExitNodeView({ data, selected }: NodeProps<PlaceNode>) {
   const editable = (data as { editable?: boolean }).editable ?? false;
   const over = data.util != null && data.util > 1;
@@ -71,6 +81,7 @@ function ExitNodeView({ data, selected }: NodeProps<PlaceNode>) {
   );
 }
 
+// Finds the middle point of a box on the map, so routes can run centre to centre.
 function centre(n: InternalNode) {
   return {
     x: n.internals.positionAbsolute.x + (n.measured.width ?? 0) / 2,
@@ -78,6 +89,9 @@ function centre(n: InternalNode) {
   };
 }
 
+// Draws one route as a straight line with a small label in the middle.
+// With a plan, the line gets busier colours and grows thicker as it fills; the label shows people sent out of its capacity.
+// Without a plan, the label shows the route's capacity, length and any fixed travel time.
 function RouteEdgeView({ id, source, target, data, selected }: EdgeProps<RouteEdge>) {
   const s = useInternalNode(source), t = useInternalNode(target);
   if (!s || !t) return null;
@@ -102,9 +116,12 @@ function RouteEdgeView({ id, source, target, data, selected }: EdgeProps<RouteEd
   );
 }
 
+// Tells the map library which drawing to use for each kind of box and line.
 const nodeTypes = { place: PlaceNodeView, exit: ExitNodeView };
 const edgeTypes = { route: RouteEdgeView };
 
+// What the map is given: the places and routes, whether editing is allowed,
+// the plan loads to colour in, and actions to call when the user moves or links things.
 interface Props {
   nodes: PlaceNode[];
   edges: RouteEdge[];
@@ -116,6 +133,8 @@ interface Props {
   className?: string;
 }
 
+// Draws the full venue map with a grid background and zoom buttons.
+// Editing (dragging, linking, selecting, deleting with the keyboard) is switched on only when allowed.
 export default function VenueCanvas({
   nodes, edges, editable = false, loads, onNodesChange, onEdgesChange, onConnect, className,
 }: Props) {
@@ -124,6 +143,7 @@ export default function VenueCanvas({
     const l = n.data.locationType === "exit" ? loads?.exits.get(n.data.name) : undefined;
     return { ...n, data: { ...n.data, editable, load: l?.load, util: l?.util } };
   }), [nodes, loads, editable]);
+  // When a plan is shown, routes it does not use get a load of zero, so they appear as unused.
   const shownEdges = useMemo(() => edges.map((e) => {
     const l = loads?.routes.get(e.id);
     return { ...e, data: { ...e.data!, load: l ? l.load : loads ? 0 : undefined, util: l ? l.util : loads ? 0 : undefined } };

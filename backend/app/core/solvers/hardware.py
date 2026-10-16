@@ -1,3 +1,6 @@
+# WHAT THIS FILE IS FOR: runs the quantum method on a real IBM quantum computer over the internet.
+# Jobs wait in IBM's queue, so a run is sent now and collected later.
+# The website's hardware page uses this to list machines, send jobs and fetch results.
 """
 IBM Quantum hardware solver (Stage 5).
 
@@ -36,10 +39,13 @@ from app.core.solvers.quantum import (
 )
 
 
+# A special error meaning "the real quantum computer cannot be used right now".
 class HardwareUnavailable(RuntimeError):
     """Not signed in, or IBM cannot be reached. The message is shown to the user as it is."""
 
 
+# Signs in to IBM Quantum using the secret key and account ID kept in the settings.
+# Gives a clear message if those are missing or the sign in fails.
 def service():
     token, crn = os.environ.get("QFLOW_IBM_TOKEN"), os.environ.get("QFLOW_IBM_CRN")
     if not token or not crn:
@@ -54,6 +60,7 @@ def service():
         raise HardwareUnavailable(f"Could not sign in to IBM Quantum: {e}") from e
 
 
+# Asks a machine how many jobs are waiting ahead in its queue; blank if it will not say.
 def _pending(backend) -> int | None:
     try:
         return backend.status().pending_jobs
@@ -61,12 +68,16 @@ def _pending(backend) -> int | None:
         return None
 
 
+# Lists the real IBM quantum computers that are switched on, with their size and queue length.
+# The least busy machines come first.
 def list_devices() -> list[dict[str, Any]]:
     out = [{"name": b.name, "num_qubits": b.num_qubits, "pending_jobs": _pending(b)}
            for b in service().backends(operational=True, simulator=False)]
     return sorted(out, key=lambda d: (d["pending_jobs"] or 0, d["name"]))
 
 
+# Chooses which machine to use: the one the user named, or else the least busy one.
+# Checks the machine has enough qubits (quantum bits) for this venue.
 def _backend(svc, n_qubits: int, device: str | None):
     if device:
         try:
@@ -82,12 +93,16 @@ def _backend(svc, n_qubits: int, device: str | None):
         raise HardwareUnavailable(f"No IBM device with {n_qubits} qubits is available right now.") from e
 
 
+# Translates the quantum program into the exact instructions a given machine understands.
+# This is called "transpiling", and it also fits the program to how that chip is wired.
 def _transpile(logical, backend, seed: int):
     # Optimisation level 1 matches the noisy simulator runs, so the comparison is like for like.
     pm = generate_preset_pass_manager(optimization_level=1, backend=backend, seed_transpiler=seed)
     return pm.run(logical)
 
 
+# A rehearsal: prepares the program for a machine and reports its size, without sending it.
+# Costs nothing from the IBM allowance.
 def dry_run(problem: RoutingProblem, reps: int = 2, device: str | None = None, seed: int = 7) -> dict:
     svc = service()
     b = _backend(svc, problem.num_qubits, device)
@@ -96,12 +111,16 @@ def dry_run(problem: RoutingProblem, reps: int = 2, device: str | None = None, s
     return {"backend": b.name, "pending_jobs": _pending(b), "transpiled": circuit_stats(isa)}
 
 
+# Hands the ready program to IBM and asks for a number of repeat runs ("shots").
 def _sampler_run(backend, isa, shots: int):
     """Sends the job to IBM. Kept separate so the tests can swap in a local simulator."""
     from qiskit_ibm_runtime import SamplerV2
     return SamplerV2(mode=backend).run([isa], shots=shots)
 
 
+# Phase one of a real run: tune the program's dial settings on this computer first.
+# Then prepare it for the chosen machine, send it, and return a receipt with the job ID.
+# The receipt is saved so the result can be collected once IBM has finished.
 def submit(problem: RoutingProblem, reps: int = 2, shots: int = 4096,
            device: str | None = None, seed: int = 7) -> dict:
     svc = service()
@@ -120,6 +139,7 @@ def submit(problem: RoutingProblem, reps: int = 2, shots: int = 4096,
     }
 
 
+# Checks on a sent job: is it queued, running or done, and where is it in the line?
 def job_status(job_id: str) -> dict:
     job = service().job(job_id)
     s = job.status()
@@ -133,7 +153,11 @@ def job_status(job_id: str) -> dict:
     return {"status": name, "queue_position": position}
 
 
+# Phase two of a real run: collect the finished job and tally how often each plan came up.
+# Those tallies are marked with the same quality measures as the simulator runs.
+# Returns the usual answer sheet, with time on IBM's chip and queue wait shown separately.
 def job_result(problem: RoutingProblem, job_id: str, meta: dict, reference: SolverResult) -> SolverResult:
+    # Step 1: fetch the tallies and work out the quality measures.
     job = service().job(job_id)
     counts = job.result()[0].data.meas.get_counts()
     shots = meta["shots"]
@@ -141,6 +165,7 @@ def job_result(problem: RoutingProblem, job_id: str, meta: dict, reference: Solv
     best = metrics["best_sampled"]
     status = "optimal" if best["is_optimal"] else (
         "feasible" if problem.is_feasible(best["bitstring"]) else "infeasible")
+    # Step 2: gather the timings: chip time, training time and queue wait.
     try:
         usage = float(job.usage())  # seconds the processor was busy; queue time is not counted
     except Exception:
@@ -152,6 +177,7 @@ def job_result(problem: RoutingProblem, job_id: str, meta: dict, reference: Solv
     # (here IBM processor time). Queue wait is reported apart, since it depends on how
     # busy IBM is, not on the algorithm.
     total = training + usage
+    # Step 3: pack everything into the standard answer sheet.
     return SolverResult.build(
         problem, "ibm_hardware", status, best["bitstring"], total,
         timing={"training_s": training, "execution_s": usage, "total_s": total,
@@ -167,6 +193,7 @@ def job_result(problem: RoutingProblem, job_id: str, meta: dict, reference: Solv
     )
 
 
+# Works out how long the job sat in line, and labels whether IBM said so or it is our estimate.
 def _queue_seconds(job, meta: dict, usage: float) -> tuple[float | None, str]:
     """Seconds the job waited in IBM's queue. IBM's own timestamps when available,
     otherwise an estimate from the time between submission and now."""
