@@ -140,7 +140,7 @@ python -m pytest -q tests
 
 `requirements.txt` lists every backend package with its exact version, so this one command installs everything: FastAPI, Qiskit and its simulators, OR-Tools, SciPy and the rest. Packages go into the `venv` folder, not your main Python.
 
-The first install downloads Qiskit, Qiskit Aer and OR-Tools, so it can take several minutes. All 82 tests should pass.
+The first install downloads Qiskit, Qiskit Aer and OR-Tools, so it can take several minutes. All 83 tests should pass.
 
 ### 4. Connect IBM Quantum (optional)
 
@@ -289,6 +289,7 @@ The main workspace for building venues and comparing solvers.
   * areas: name, type (zone, hall, seating, event area, corridor, entrance), number of people, and **Split into groups** (1 to 4). By default everyone in an area leaves together by one route; splitting turns them into near equal groups that can each take a different route.
   * exits: name and capacity
   * routes: capacity, length in metres, and optionally travel time in seconds. Leave travel time empty to estimate it from length at walking pace (1.3 m/s); set it for stairs, ramps or slow routes. Custom times appear on the map label.
+  * route direction: **Both ways** (the default), or **One way** in either direction, for an exit only turnstile or a one way staircase. One way routes show arrowheads on the map, and crowds are never routed against them.
 * Press **Delete** to remove the selected item.
 
 **Saving venues**
@@ -510,7 +511,7 @@ q-flow/
 │   │   ├── api/schemas.py         request models
 │   │   └── main.py                FastAPI routes
 │   ├── scripts/                   command line tools
-│   ├── tests/                     82 automated tests
+│   ├── tests/                     83 automated tests
 │   ├── results/                   exported experiment evidence
 │   └── requirements.txt
 ├── frontend/
@@ -530,7 +531,7 @@ cd backend
 python -m pytest -q tests
 ```
 
-The 82 tests check the guarantees every comparison depends on:
+The 83 tests check the guarantees every comparison depends on:
 
 * The lowest energy answer is always the best valid plan, checked against every possible answer.
 * Every invalid answer scores worse than the optimum.

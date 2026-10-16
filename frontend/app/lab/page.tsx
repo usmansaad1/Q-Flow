@@ -329,6 +329,11 @@ export default function LabPage() {
   const updateEdge = (id: string, patch: Partial<NonNullable<RouteEdge["data"]>>) =>
     setEdges((es) => es.map((e) => (e.id === id ? { ...e, data: { ...e.data!, ...patch } } : e)));
 
+  // Makes a route one way in the opposite direction, by swapping its start and end boxes.
+  const reverseEdge = (id: string) =>
+    setEdges((es) => es.map((e) => (e.id === id
+      ? { ...e, source: e.target, target: e.source, data: { ...e.data!, oneWay: true } } : e)));
+
   // Deletes whatever is selected, plus any routes left dangling by a deleted place.
   const deleteSelected = () => {
     const gone = new Set(nodes.filter((n) => n.selected).map((n) => n.id));
@@ -596,7 +601,7 @@ export default function LabPage() {
           </Button>
           <section className="rounded-[4px] border border-line bg-panel p-4">
             <Inspector node={selectedNode} edge={selectedEdge} nodeName={nameOf}
-              onNodeChange={updateNode} onEdgeChange={updateEdge} onDelete={deleteSelected} />
+              onNodeChange={updateNode} onEdgeChange={updateEdge} onEdgeReverse={reverseEdge} onDelete={deleteSelected} />
           </section>
           <section className="rounded-[4px] border border-line bg-panel p-4">
             <SolverPanel selected={solver} onSelect={setSolver} settings={settings} onSettings={setSettings}
@@ -621,6 +626,6 @@ function snapshotOf(name: string, nodes: PlaceNode[], edges: RouteEdge[]): strin
   return JSON.stringify({
     name: name.trim(),
     nodes: nodes.map((n) => [n.id, Math.round(n.position.x), Math.round(n.position.y), n.data.name, n.data.locationType, n.data.capacity, n.data.people, n.data.groups]),
-    edges: edges.map((e) => [e.id, e.source, e.target, e.data?.capacity, e.data?.length, e.data?.travelTime]),
+    edges: edges.map((e) => [e.id, e.source, e.target, e.data?.capacity, e.data?.length, e.data?.travelTime, !!e.data?.oneWay]),
   });
 }

@@ -25,6 +25,9 @@ export type RouteData = {
   capacity: number;
   length: number;
   travelTime: number | null; // seconds; null means "estimate from length"
+  // True when people may only walk this route from its start box to its end box,
+  // for example an exit only turnstile. False or missing means both ways.
+  oneWay?: boolean;
   load?: number;
   util?: number;
 };
@@ -81,7 +84,7 @@ export function venueToGraph(v: VenueDTO): { nodes: PlaceNode[]; edges: RouteEdg
     type: "route",
     source: idByName.get(r.from_node)!,
     target: idByName.get(r.to_node)!,
-    data: { capacity: r.capacity, length: r.length, travelTime: r.travel_time ?? null },
+    data: { capacity: r.capacity, length: r.length, travelTime: r.travel_time ?? null, oneWay: r.bidirectional === false },
   }));
   return { nodes, edges };
 }
@@ -149,6 +152,8 @@ export function graphToVenue(name: string, nodes: PlaceNode[], edges: RouteEdge[
         capacity: e.data!.capacity,
         length: e.data!.length,
         travel_time: e.data!.travelTime ?? null,
+        // A one way route can only be walked from its start box to its end box.
+        bidirectional: !e.data!.oneWay,
       })),
       crowd_groups: crowds.flatMap((n) => splitCrowd(n.data.name.trim(), n.data.people, n.data.groups)),
     },

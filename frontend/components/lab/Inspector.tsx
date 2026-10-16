@@ -14,11 +14,13 @@ interface Props {
   nodeName: (id: string) => string;
   onNodeChange: (id: string, patch: Partial<PlaceNode["data"]>) => void;
   onEdgeChange: (id: string, patch: Partial<NonNullable<RouteEdge["data"]>>) => void;
+  // Makes the route one way in the opposite direction (swaps its start and end).
+  onEdgeReverse: (id: string) => void;
   onDelete: () => void;
 }
 
 // Shows one of three forms: for a place, for a route, or a short help note when nothing is selected.
-export default function Inspector({ node, edge, nodeName, onNodeChange, onEdgeChange, onDelete }: Props) {
+export default function Inspector({ node, edge, nodeName, onNodeChange, onEdgeChange, onEdgeReverse, onDelete }: Props) {
   // Case 1: a place (area or exit) is selected.
   if (node) {
     const d = node.data;
@@ -61,10 +63,28 @@ export default function Inspector({ node, edge, nodeName, onNodeChange, onEdgeCh
   }
   // Case 2: a route between two places is selected.
   if (edge) {
+    const a = nodeName(edge.source), b = nodeName(edge.target);
     return (
       <div className="space-y-3">
         <h3 className="font-display text-base font-bold">Route</h3>
-        <p className="text-sm text-ink-soft">{nodeName(edge.source)} to {nodeName(edge.target)}, usable both ways.</p>
+        <p className="text-sm text-ink-soft">
+          {edge.data!.oneWay ? <>One way from {a} to {b}.</> : <>Between {a} and {b}, usable both ways.</>}
+        </p>
+        {/* Direction: both ways, or one way in either direction. Choosing the reverse swaps the route's ends */}
+        <Field label="Direction"
+          hint="One way routes can only be walked in the direction of their arrows, like an exit only turnstile or a one way staircase.">
+          <Select<"both" | "forward" | "reverse"> value={edge.data!.oneWay ? "forward" : "both"}
+            onChange={(v) => {
+              if (v === "both") onEdgeChange(edge.id, { oneWay: false });
+              else if (v === "forward") onEdgeChange(edge.id, { oneWay: true });
+              else onEdgeReverse(edge.id);
+            }}
+            options={[
+              { value: "both", label: "Both ways" },
+              { value: "forward", label: `One way: ${a} to ${b}` },
+              { value: "reverse", label: `One way: ${b} to ${a}` },
+            ]} />
+        </Field>
         <Field label="Capacity" hint="People this route can carry during the evacuation.">
           <NumberInput value={edge.data!.capacity} min={1} step={10}
             onChange={(v) => onEdgeChange(edge.id, { capacity: v })} />

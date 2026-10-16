@@ -102,3 +102,23 @@ def test_empty_experiment_summary_is_kept():
     exp_id = s.create_experiment("depth", "t", {})
     s.finish_experiment(exp_id, summary={})
     assert s.get_experiment(exp_id)["summary"] == {}
+
+
+# Checks that a crowd is never routed against a one way corridor, and that a crowd whose
+# only way out is a one way corridor pointing the wrong way gets the plain "can't reach" message.
+def test_crowds_never_walk_a_one_way_route_backwards():
+    from app.core.problem import RoutingProblem
+    from app.core.venue import Venue
+    v = (Venue("t").add_location("Hall", "hall")
+         .add_location("Front", "exit", capacity=500).add_location("Back", "exit", capacity=500))
+    v.add_route("Front", "Hall", capacity=500, length=5, bidirectional=False)   # entry only: Front to Hall
+    v.add_route("Hall", "Back", capacity=500, length=50)
+    v.add_group("g", "Hall", 100)
+    p = RoutingProblem(v, paths_per_group=2)
+    assert {o.path.exit_id for o in p.options} == {"Back"}   # Front is closer but points the wrong way
+
+    w = Venue("t").add_location("Hall", "hall").add_location("Front", "exit", capacity=500)
+    w.add_route("Front", "Hall", capacity=500, length=5, bidirectional=False)
+    w.add_group("g", "Hall", 100)
+    with pytest.raises(ValueError, match="can't reach any exit"):
+        RoutingProblem(w)

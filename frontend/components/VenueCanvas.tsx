@@ -104,6 +104,16 @@ function RouteEdgeView({ id, source, target, data, selected }: EdgeProps<RouteEd
     <>
       {selected && <BaseEdge id={`${id}-sel`} path={path} style={{ stroke: "#4B3FD1", strokeWidth: width + 6, opacity: 0.25 }} />}
       <BaseEdge id={id} path={path} style={{ stroke: color, strokeWidth: width, strokeLinecap: "round" }} />
+      {/* One way routes get two arrowheads along the line, either side of the label, pointing the allowed way */}
+      {data?.oneWay && [0.32, 0.68].map((f) => {
+        const angle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+        const size = 5 + width * 0.6;
+        return (
+          <path key={f} d={`M ${-size} ${-size} L ${size} 0 L ${-size} ${size} Z`} fill={color}
+            stroke="#fff" strokeWidth={1.5} strokeLinejoin="round"
+            transform={`translate(${a.x + (b.x - a.x) * f} ${a.y + (b.y - a.y) * f}) rotate(${angle})`} />
+        );
+      })}
       <EdgeLabelRenderer>
         <div className="nodrag nopan num pointer-events-auto absolute rounded-[2px] border border-line bg-white/95 px-1.5 py-px text-[10.5px] text-ink"
           style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}>
