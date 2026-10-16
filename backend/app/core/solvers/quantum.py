@@ -68,7 +68,9 @@ BASE_READOUT = 2e-2  # measurement bit flip probability
 class QAOAConfig:
     reps: int = 1                         # QAOA depth p
     shots: int = 4096
+    # The most tries the tuner may make when training the dials.
     maxiter: int = 200
+    # A fixed starting number for the random parts, so the same run gives the same result every time.
     seed: int = 7
     noise: str | None = None              # None, "depolarizing", "fake_backend"
     noise_level: float = 1.0              # multiplier on BASE_* (depolarizing only)
@@ -84,12 +86,15 @@ class QAOAConfig:
 # The cost of every plan stays exactly the same; only the bookkeeping changes.
 def qubo_to_ising(problem: RoutingProblem) -> tuple[dict[int, float], dict[tuple[int, int], float], float]:
     """x_i = (1 - Z_i) / 2  ->  E = const + sum h_i Z_i + sum J_ij Z_i Z_j."""
+    # Start with no costs, then move each piece of the cost table across.
     h: dict[int, float] = {i: 0.0 for i in range(problem.num_variables)}
     J: dict[tuple[int, int], float] = {}
     const = problem.offset
+    # Single route costs: half goes to the fixed constant, half (with a minus sign) to h.
     for i, c in problem.linear.items():
         const += c / 2
         h[i] -= c / 2
+    # Pair costs: a quarter each to the constant, to each route's h, and to the pair's J.
     for (i, j), c in problem.quadratic.items():
         const += c / 4
         h[i] -= c / 4
@@ -218,9 +223,11 @@ def counts_to_probs(counts: dict[str, int], n: int) -> np.ndarray:
 # Each gate has a small chance of scrambling its qubits, and each reading a chance of flipping 0 and 1.
 # "level" multiplies the base chances; 0 means no noise, and very high values are capped.
 def depolarizing_noise_model(level: float) -> NoiseModel:
+    # The basic gates the simulator works in; every circuit is rewritten into these.
     nm = NoiseModel(basis_gates=["rz", "sx", "x", "cx"])
     if level <= 0:
         return nm
+    # p1: one qubit gate error, p2: two qubit gate error, pr: reading error.
     p1, p2, pr = min(BASE_P1 * level, 0.75), min(BASE_P2 * level, 0.9375), min(BASE_READOUT * level, 0.5)
     nm.add_all_qubit_quantum_error(depolarizing_error(p1, 1), ["sx", "x"])
     nm.add_all_qubit_quantum_error(depolarizing_error(p2, 2), ["cx"])
@@ -365,6 +372,8 @@ def run_qaoa(problem: RoutingProblem, cfg: QAOAConfig, solver_name: str,
     if problem.num_qubits > 16:
         raise ValueError(f"{problem.num_qubits} qubits is beyond the QAOA simulation limit (16).")
     t0 = time.perf_counter()
+    # The exact classical answer is needed to grade the quantum results, so get it first
+    # unless the caller already has it.
     reference = reference or solve_exact(problem)
     n = problem.num_variables
 
@@ -377,6 +386,8 @@ def run_qaoa(problem: RoutingProblem, cfg: QAOAConfig, solver_name: str,
     history = list(trained["history"])
 
     # 2. Build and transpile the measured circuit for the chosen simulator.
+    # "Transpile" means rewriting the program into the gates and wiring the machine actually has,
+    # much like translating a recipe into the tools a particular kitchen owns.
     sim, tkw, noise_desc = make_simulator(cfg)
     logical, params = build_qaoa_circuit(problem, cfg.reps, measure=True)
     compiled = transpile(logical, optimization_level=1, seed_transpiler=cfg.seed, **tkw)

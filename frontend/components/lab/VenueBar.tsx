@@ -47,6 +47,7 @@ const STATUS_TEXT: Record<Props["status"], { text: string; cls: string }> = {
 
 // Draws the toolbar. It also keeps track of whether the "More" menu is open.
 export default function VenueBar(p: Props) {
+  // Handles on the hidden file picker and the More menu, so code can open or close them.
   const fileRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDetailsElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -71,6 +72,7 @@ export default function VenueBar(p: Props) {
     fn();
   };
 
+  // The status label to show, and whether the venue being edited is one the user saved.
   const st = STATUS_TEXT[p.status];
   const isSaved = p.source.kind === "saved";
 
@@ -79,6 +81,7 @@ export default function VenueBar(p: Props) {
       {/* Venue picker: built in examples first, then the user's saved venues */}
       <select aria-label="Venue" value={sourceKey(p.source)}
         onChange={(e) => {
+          // The chosen option looks like "preset:micro_hall" or "saved:4"; split it back into kind and id.
           const [kind, id] = e.target.value.split(":");
           p.onPick(kind === "preset" ? { kind: "preset", id } : kind === "saved" ? { kind: "saved", id: Number(id) } : { kind: "new" });
         }}

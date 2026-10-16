@@ -80,14 +80,19 @@ def _line(ax, runs, x, metric, label, color, style="-", marker="o"):
 # Chart for Experiment 1: three panels showing how quantum quality changes as problems grow,
 # with random guessing shown as a dashed line for comparison.
 def chart_scaling(runs, path):
+    # Step 1: keep only the quantum runs and make a row of three empty panels.
     quantum = [r for r in runs if r["method"].startswith("QAOA")]
     fig, axes = plt.subplots(1, 3, figsize=(13, 3.8))
     for method, rs in _by(quantum, "method").items():
+        # Step 2: one line per quantum method in each panel.
         for ax, metric in zip(axes, ("prob_optimal", "prob_feasible", "mean_approx_ratio")):
             _line(ax, rs, "num_qubits", metric, method, _color(method))
+    # Step 3: the dashed "random guessing" lines, to show what blind luck would score.
     ref = [r for r in runs if r["method"] == "QAOA ideal"]
     _line(axes[0], ref, "num_qubits", "random_prob_optimal", "Random guessing", COLORS["Random guessing"], "--", "x")
     _line(axes[2], ref, "num_qubits", "random_mean_ratio", "Random guessing", COLORS["Random guessing"], "--", "x")
+    # Step 4: titles and labels. The first panel uses a log scale, since small chances vary a lot.
+    # A dotted line at 1.0 marks the classical exact result, which is always perfect.
     axes[0].set_yscale("log")
     for ax, t in zip(axes, ("P(optimal plan), log scale", "P(valid plan)", "Mean approximation ratio")):
         ax.set_title(t); ax.set_xlabel("Qubits (decision variables)")
@@ -95,6 +100,7 @@ def chart_scaling(runs, path):
         ax.axhline(1.0, color=COLORS["Classical exact"], linestyle=":", linewidth=1)
     axes[1].set_ylim(0, 1.05); axes[2].set_ylim(0, 1.05)
     axes[0].legend(fontsize=7)
+    # Step 5: the overall title, then save the picture and free the memory.
     fig.suptitle("Experiment 1: QAOA quality vs problem size (classical exact = 1.0, dotted)", fontsize=10)
     fig.tight_layout(); fig.savefig(path); plt.close(fig)
 
@@ -135,6 +141,7 @@ def chart_noise(runs, path):
     axes[2].set_xticks([k + width * (len(series) - 1) / 2 for k in range(len(insts))])
     axes[2].set_xticklabels([i.replace(" ", "\n", 1) for i in insts], fontsize=7)
     axes[2].set_title("Real device noise models"); axes[2].set_ylim(0, 1.05); axes[2].legend(fontsize=7)
+    # Overall title, then save the picture.
     fig.suptitle("Experiment 2: Effect of quantum noise (parameters fixed per venue)", fontsize=10)
     fig.tight_layout(); fig.savefig(path); plt.close(fig)
 
@@ -143,6 +150,7 @@ def chart_noise(runs, path):
 # and how many two qubit steps (gates) the circuit needs.
 def chart_depth(runs, path):
     fig, axes = plt.subplots(1, 3, figsize=(13, 3.8))
+    # One colour per venue; perfect runs as solid lines, noisy runs as dashed lines.
     insts = _by(runs, "instance")
     for i, (inst, rs) in enumerate(insts.items()):
         c = plt.cm.viridis(i / max(len(insts) - 1, 1))
@@ -155,6 +163,7 @@ def chart_depth(runs, path):
         _line(axes[2], noisy, "reps", "two_qubit_gates", inst, c)
     axes[0].set_title("Mean approximation ratio (solid ideal, dashed noisy)"); axes[0].set_ylim(0, 1.05)
     axes[1].set_title("P(optimal plan)"); axes[2].set_title("Two qubit gates in circuit")
+    # Titles and axis labels for all three panels.
     for ax in axes:
         ax.set_xlabel("QAOA depth p")
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
@@ -173,6 +182,7 @@ def chart_versus(runs, path):
     for ax, metric, title in ((axes[0], "mean_approx_ratio", "Mean approximation ratio"),
                               (axes[1], "prob_optimal", "P(optimal plan)"),
                               (axes[2], "runtime_s", "Runtime (s), log scale\nquantum = training + simulation")):
+        # For each method, one bar per venue, placed side by side.
         for j, m in enumerate(methods):
             vals = []
             for inst in insts:
@@ -182,6 +192,7 @@ def chart_versus(runs, path):
         ax.set_xticks([k + width * (len(methods) - 1) / 2 for k in range(len(insts))])
         ax.set_xticklabels([i.replace(" ", "\n", 1) for i in insts], fontsize=7)
         ax.set_title(title)
+    # Running times vary hugely, so that panel uses a log scale. One shared legend sits underneath.
     axes[2].set_yscale("log")
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=len(methods), fontsize=8, frameon=False)
@@ -197,6 +208,7 @@ CHARTS = {"scaling": chart_scaling, "noise": chart_noise, "depth": chart_depth, 
 # Writes an experiment's files into a folder: all runs, the summary, and its chart.
 # Returns where each file was saved. Fails if the experiment does not exist.
 def export_experiment(store: Storage, exp_id: int, out_dir: str | Path) -> dict[str, Path]:
+    # Fetch the experiment and its runs, and make sure the output folder exists.
     exp = store.get_experiment(exp_id)
     if not exp:
         raise KeyError(f"Experiment {exp_id} not found.")

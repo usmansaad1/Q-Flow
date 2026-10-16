@@ -118,11 +118,13 @@ export function graphToVenue(name: string, nodes: PlaceNode[], edges: RouteEdge[
   const seen = new Set<string>();
   for (const e of edges) {
     const a = nameById.get(e.source)!, b = nameById.get(e.target)!;
+    // Sorting the two names means A to B and B to A count as the same pair, so only one route per pair.
     const key = [a, b].sort().join("|");
     if (seen.has(key)) errors.push(`There are two routes between ${a} and ${b}.`);
     seen.add(key);
     if (!(e.data!.capacity > 0) || !(e.data!.length > 0)) errors.push(`Route ${a} to ${b} needs a capacity and length above 0.`);
     if (e.data!.travelTime != null && !(e.data!.travelTime > 0)) errors.push(`Route ${a} to ${b} needs a travel time above 0, or leave it empty.`);
+    // The same "From|To" id the backend gives this route, so results can be matched to this line.
     routeIds.set(e.id, `${a}|${b}`);
   }
   // Step 3: check that every crowd can be split as asked and has a way out.

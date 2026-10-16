@@ -13,6 +13,7 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyl
 export default function RunHistory({ runs, onOpen, onDelete }:
   { runs: LabRunSummary[]; onOpen: (id: number) => void; onDelete: (id: number) => void }) {
   return (
+    // A fold out box: the heading shows the count; clicking it reveals the table.
     <details className="rounded-[4px] border border-line bg-panel p-4">
       <summary className="cursor-pointer font-display text-base font-bold">
         Run history <span className="num font-sans text-sm font-normal text-ink-soft">({runs.length} saved)</span>

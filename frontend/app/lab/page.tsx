@@ -49,6 +49,9 @@ type Shown = "baseline" | SolverKey | null;
 export default function LabPage() {
   // Venue memory: the lists of example and saved venues, where the current one came from,
   // and its save state, name, boxes (nodes) and routes (edges).
+  // HOW TO READ THE LINES BELOW: useState gives the page one piece of memory and a way to change it.
+  // For example [venueName, setVenueName] is the current name and the function that updates it.
+  // Whenever one of these changes, React redraws the parts of the page that use it.
   const [presets, setPresets] = useState<PresetInfo[]>([]);
   const [savedList, setSavedList] = useState<SavedVenueSummary[]>([]);
   const [source, setSource] = useState<VenueSource>({ kind: "preset", id: "small_event_hall" });
@@ -165,9 +168,11 @@ export default function LabPage() {
   // Saves the venue on the server as a brand new entry, then switches to editing that saved copy.
   const saveNew = async () => {
     if (!conversion.venue) return;
+    // Step 1: pick a free name and show "saving" while the server works.
     const name = uniqueName(venueName.trim() || "My venue");
     setSaving(true);
     try {
+      // Step 2: send it to the server, then treat the saved copy as the clean starting point.
       const summary = await api.saveVenue({ ...conversion.venue, name });
       setVenueName(name);
       setSource({ kind: "saved", id: summary.id });
@@ -187,6 +192,7 @@ export default function LabPage() {
     if (source.kind !== "saved") return saveNew();
     setSaving(true);
     try {
+      // Overwrite the saved copy on the server, then mark the current state as clean.
       await api.updateVenue(source.id, conversion.venue);
       setCleanSnapshot(snapshot);
       await refreshSaved();
@@ -256,6 +262,7 @@ export default function LabPage() {
   const importFile = async (file: File) => {
     if (!(await confirmDiscard())) return;
     try {
+      // Read the file as text, turn it into data, and check it has places, routes and crowds.
       const v = JSON.parse(await file.text()) as VenueDTO;
       if (!Array.isArray(v?.locations) || !Array.isArray(v?.routes) || !Array.isArray(v?.crowd_groups))
         throw new Error("This file doesn't look like a Q-Flow venue.");
@@ -299,10 +306,12 @@ export default function LabPage() {
 
   // Adds a new area (100 people) or exit (capacity 300) just below the existing boxes, and selects it.
   const addPlace = (exit: boolean) => {
+    // Step 1: number it (Area 3, Exit 2...) and place it centred, just below the lowest box.
     const count = nodes.filter((n) => (n.data.locationType === "exit") === exit).length + 1;
     const xs = nodes.map((n) => n.position.x), ys = nodes.map((n) => n.position.y);
     const x = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : 300;
     const y = ys.length ? Math.max(...ys) + 90 : 200;
+    // Step 2: unselect everything else and add the new box, already selected for editing.
     setNodes((ns) => [...ns.map((n) => ({ ...n, selected: false })), {
       id: newId("n"), type: exit ? "exit" : "place", position: { x: x + (count % 3) * 40, y }, selected: true,
       data: exit
@@ -386,6 +395,7 @@ export default function LabPage() {
 
   // IBM runs wait in a queue, so the job is submitted once and then checked every 3 seconds.
   const runOnHardware = async (sig: string, venue: VenueDTO) => {
+    // Send the job and show "Sending the job to IBM" in the solver panel.
     const sent = await api.hardwareSubmit(venue, settings, quantum, hwDevice === "auto" ? null : hwDevice);
     setHwStatus({ job_id: sent.job_id, status: "SUBMITTED", backend: sent.backend });
     // Keep asking IBM until the job finishes, fails or is cancelled.
@@ -411,9 +421,12 @@ export default function LabPage() {
   const run = async (key: SolverKey) => {
     if (!conversion.venue || !signature) return;
     const sig = signature, venue = conversion.venue;
+    // Step 1: mark the solver as busy and clear any old error (or old results for a changed venue).
     setRunning(key);
     setResults((r) => (r.sig === sig ? { ...r, error: null } : { sig, runs: {}, shown: null, error: null }));
     try {
+      // Step 2: run it. When the answer arrives, keep it only if the venue has not changed meanwhile,
+      // paint it on the map, and refresh the Run history list.
       if (key === "ibm_hardware") {
         await runOnHardware(sig, venue);
       } else {
@@ -425,6 +438,7 @@ export default function LabPage() {
     } catch (e) {
       setResults((r) => (r.sig === sig ? { ...r, error: (e as Error).message } : r));
     } finally {
+      // Step 3: whatever happened, the solver is no longer busy.
       setRunning(null);
       setHwStatus(null);
     }

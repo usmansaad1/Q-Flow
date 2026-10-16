@@ -37,6 +37,7 @@ const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 // Number labels along the bottom are sorted from small to large.
 /** One row per x value; one column per series, averaged over runs. */
 function table(runs: RunRow[], x: (r: RunRow) => string | number, series: (r: RunRow) => string | null, metric: Metric) {
+  // Step 1: collect the values into piles, one pile per (bottom axis value, line or bar name).
   const acc = new Map<string | number, Map<string, number[]>>();
   for (const r of runs) {
     const s = series(r);
@@ -46,6 +47,7 @@ function table(runs: RunRow[], x: (r: RunRow) => string | number, series: (r: Ru
     row.set(s, [...(row.get(s) ?? []), v]);
     acc.set(x(r), row);
   }
+  // Step 2: sort the rows and replace each pile with its average.
   return [...acc.entries()]
     .sort(([a], [b]) => (typeof a === "number" && typeof b === "number" ? a - b : 0))
     .map(([xv, row]) => ({ x: xv, ...Object.fromEntries([...row].map(([k, v]) => [k, mean(v)])) }));
@@ -77,6 +79,7 @@ function Lines({ data, xLabel, percent = true, log = false, fit = false, colors,
   const color = (n: string, i: number) => (Array.isArray(colors) ? colors[i % colors.length] : colors[n] ?? C.series[i % C.series.length]);
   return (
     <ResponsiveContainer width="100%" height="100%">
+      {/* Grid, axes, hover tooltip and legend, then one line per series */}
       <LineChart data={data} margin={{ top: 4, right: 12, bottom: 16, left: 0 }}>
         <CartesianGrid stroke="#E4E9EF" />
         <XAxis dataKey="x" tick={AXIS} label={{ value: xLabel, position: "insideBottom", offset: -10, ...AXIS }} />
@@ -105,6 +108,7 @@ function Bars({ data, colors, log = false, percent = true }: {
   const color = (n: string, i: number) => (Array.isArray(colors) ? colors[i % colors.length] : colors[n] ?? C.series[i % C.series.length]);
   return (
     <ResponsiveContainer width="100%" height="100%">
+      {/* Grid, axes, hover tooltip and legend, then one set of bars per series */}
       <BarChart data={data} margin={{ top: 6, right: 12, bottom: 4, left: 0 }}>
         <CartesianGrid stroke="#E4E9EF" vertical={false} />
         <XAxis dataKey="x" tick={AXIS} interval={0} />
@@ -123,6 +127,7 @@ function Bars({ data, colors, log = false, percent = true }: {
 // Charts for the "Problem size" experiment: how quantum results change as more qubits are needed.
 // Ideal and noisy quantum are compared with random guessing.
 function Scaling({ runs }: { runs: RunRow[] }) {
+  // Keep only the quantum runs; random guessing figures are stored on the ideal ones.
   const q = runs.filter((r) => r.method.startsWith("QAOA"));
   const ideal = q.filter((r) => r.method === "QAOA ideal");
   const label = (r: RunRow) => (r.method === "QAOA ideal" ? "QAOA ideal" : "QAOA noisy");
@@ -151,6 +156,7 @@ function Scaling({ runs }: { runs: RunRow[] }) {
 // Charts for the "Quantum noise" experiment: answer quality as errors rise.
 // It also shows bars for simulated copies of real IBM processors, if they were included.
 function Noise({ runs }: { runs: RunRow[] }) {
+  // Split the runs: the adjustable error dial runs, and the copies of real IBM devices.
   const depol = runs.filter((r) => r.method === "Depolarising");
   const devices = [...new Set(runs.filter((r) => r.method !== "Depolarising").map((r) => r.method))];
   const deviceRows = table(runs, (r) => short(r.instance), (r) =>
@@ -176,6 +182,7 @@ function Noise({ runs }: { runs: RunRow[] }) {
 // Charts for the "Circuit depth" experiment: whether more QAOA layers help, with and without noise.
 // Buttons above the charts pick which venue to show.
 function Depth({ runs }: { runs: RunRow[] }) {
+  // The list of venues in this experiment and which one is picked (the first by default).
   const venues = [...new Set(runs.map((r) => r.instance))];
   const [picked, setVenue] = useState(venues[0]);
   const venue = picked !== undefined && venues.includes(picked) ? picked : venues[0];
@@ -212,6 +219,7 @@ function Depth({ runs }: { runs: RunRow[] }) {
 // Charts for the "Quantum versus classical" experiment: answer quality and run time for every solver.
 // Each solver keeps a fixed colour; the naive nearest exit plan is left out of the time chart.
 function Versus({ runs }: { runs: RunRow[] }) {
+  // The solvers in this experiment, each given its fixed colour.
   const methods = [...new Set(runs.map((r) => r.method))];
   const colorOf = (m: string) => m.startsWith("Naive") ? C.naive : m.startsWith("Classical exact") ? C.classical
     : m.startsWith("Classical") ? "#6B7280" : m === "QAOA ideal" ? C.ideal : m.startsWith("QAOA noisy") ? C.noisy : C.devices[0];

@@ -25,9 +25,13 @@ from app.core.solvers.base import SolverResult
 # Refuses to run if there are more plans than max_states, to avoid running out of memory.
 # The score ("energy") is the plan's total cost: lower means a better evacuation.
 def solve_exact(problem: RoutingProblem, max_states: int = 2_000_000) -> SolverResult:
+    # Start the stopwatch, so the answer sheet can say how long this took.
     t0 = time.perf_counter()
+    # Count the valid plans: multiply the number of route choices of every crowd.
+    # For example 3 crowds with 3 routes each gives 3 x 3 x 3 = 27 plans.
     groups = list(problem.group_options.values())
     n_states = int(np.prod([len(g) for g in groups]))
+    # Too many plans would take too long and too much memory, so stop with a clear message.
     if n_states > max_states:
         raise ValueError(f"{n_states} feasible plans exceed the exact solver limit ({max_states}).")
 
@@ -35,6 +39,8 @@ def solve_exact(problem: RoutingProblem, max_states: int = 2_000_000) -> SolverR
     Q, off = problem.qubo_matrix()
     n = problem.num_variables
     # Build all feasible bitstrings at once.
+    # X is a big table: one row per plan, one column per choice. Each row starts as all 0s,
+    # then a 1 is put in the column of the route each crowd takes in that plan.
     X = np.zeros((n_states, n))
     for row, combo in enumerate(itertools.product(*groups)):
         X[row, list(combo)] = 1
@@ -47,6 +53,8 @@ def solve_exact(problem: RoutingProblem, max_states: int = 2_000_000) -> SolverR
     runtime = time.perf_counter() - t0
     n_optimal = int(np.isclose(energies, energies[best], rtol=0, atol=1e-9).sum())
 
+    # Step 4: hand back the best plan as the answer sheet, plus facts the quantum side needs:
+    # how many plans were checked, the best, worst and average score, and how many plans tied for best.
     return SolverResult.build(
         problem, "classical_exact", "optimal", X[best].astype(int).tolist(), runtime,
         feasible_states=n_states,

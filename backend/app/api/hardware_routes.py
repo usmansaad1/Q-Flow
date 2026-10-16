@@ -49,12 +49,15 @@ def _build(venue: dict, settings: dict) -> RoutingProblem:
 # and the perfect answer. Also adds the answer IBM gave most often.
 def _assemble(problem: RoutingProblem, result: SolverResult) -> dict:
     """The same response shape /api/v1/optimize returns, so the Lab shows it unchanged."""
+    # Step 1: the simple nearest exit plan and the exact best answer, for comparison.
     baseline = solve_naive(problem)
     exact = solve_exact(problem)
     e_opt, e_worst = exact.extra["optimal_energy"], exact.extra["worst_feasible_energy"]
     span = e_worst - e_opt
     e = result.evaluation["energy"]
     m = result.extra["metrics"]
+    # Step 2: the quality grades, from 0 (worst valid plan) to 1 (best plan), for IBM's best answer
+    # and for the simple plan, plus the quantum measures such as the chance of the best plan.
     quality = {
         "optimal_energy": e_opt,
         "approximation_ratio": 1.0 if span == 0 else max(0.0, (e_worst - e) / span),
@@ -66,6 +69,7 @@ def _assemble(problem: RoutingProblem, result: SolverResult) -> dict:
         "mean_approx_ratio": m["mean_approx_ratio"],
         "random_baseline": m["random_baseline"],
     }
+    # Step 3: the answer IBM gave most often, which is what a single run would usually give.
     most = m["most_likely"]
     typical = SolverResult.build(problem, result.solver, "typical", most["bitstring"], 0.0)
     return {
@@ -81,6 +85,8 @@ def _assemble(problem: RoutingProblem, result: SolverResult) -> dict:
 # Saving it on the job means later checks never need to contact IBM again.
 def _finish(job_id: str, row: dict) -> dict:
     """IBM says the job is done: compute the answer once, save it to Run history, keep it."""
+    # Rebuild the same problem from the saved request, fetch and mark IBM's result,
+    # then save it to Run history and on the job record.
     p = row["payload"]
     problem = _build(p["venue"], p["settings"])
     result = hardware.job_result(problem, job_id, p["meta"], solve_exact(problem))
@@ -141,6 +147,7 @@ def submit_job(req: HardwareRequest):
 # It replies with the saved answer, an error, or the job's current place in IBM's queue.
 @router.get("/jobs/{job_id}")
 def get_job(job_id: str):
+    # Step 1: look the job up in our own records.
     store = Storage()
     row = store.get_hardware_job(job_id)
     if not row:
@@ -154,6 +161,7 @@ def get_job(job_id: str):
         live = hardware.job_status(job_id)
     except hardware.HardwareUnavailable as e:
         raise HTTPException(503, str(e))
+    # Step 2: act on IBM's answer: finished, failed or cancelled, or still waiting.
     status = live["status"]
     if status == "DONE":
         try:

@@ -28,6 +28,7 @@ export default function Inspector({ node, edge, nodeName, onNodeChange, onEdgeCh
     return (
       <div className="space-y-3">
         <h3 className="font-display text-base font-bold">{isExit ? "Exit" : "Area"}</h3>
+        {/* The place's name and type; changing the type to exit turns it into a way out */}
         <Field label="Name">
           <TextInput value={d.name} onChange={(e) => onNodeChange(node.id, { name: e.target.value })} />
         </Field>
@@ -63,6 +64,7 @@ export default function Inspector({ node, edge, nodeName, onNodeChange, onEdgeCh
   }
   // Case 2: a route between two places is selected.
   if (edge) {
+    // The names of the two places this route joins, for the labels below.
     const a = nodeName(edge.source), b = nodeName(edge.target);
     return (
       <div className="space-y-3">
@@ -85,6 +87,7 @@ export default function Inspector({ node, edge, nodeName, onNodeChange, onEdgeCh
               { value: "reverse", label: `One way: ${b} to ${a}` },
             ]} />
         </Field>
+        {/* Capacity, length and travel time. An empty travel time is guessed from the length */}
         <Field label="Capacity" hint="People this route can carry during the evacuation.">
           <NumberInput value={edge.data!.capacity} min={1} step={10}
             onChange={(v) => onEdgeChange(edge.id, { capacity: v })} />

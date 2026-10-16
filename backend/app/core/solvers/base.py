@@ -15,8 +15,10 @@ from app.core.problem import RoutingProblem
 # "evaluation" holds the plan's scores; "extra" holds anything specific to that solver.
 @dataclass
 class SolverResult:
+    # Which method made the plan, such as "classical_exact" or "qaoa_noisy".
     solver: str
     status: str                       # "optimal", "feasible", "infeasible", "error"
+    # The plan itself as 0s and 1s, and how many seconds the solver took.
     bitstring: list[int]
     runtime_s: float
     evaluation: dict = field(default_factory=dict)
@@ -27,6 +29,7 @@ class SolverResult:
     @classmethod
     def build(cls, problem: RoutingProblem, solver: str, status: str, bitstring: list[int],
               runtime_s: float, **extra) -> "SolverResult":
+        # Mark the plan with the shared report card from problem.py, then fill in the sheet.
         ev = problem.evaluate(bitstring)
         return cls(solver, status, list(map(int, bitstring)), runtime_s, ev.to_dict(), extra)
 
@@ -35,6 +38,7 @@ class SolverResult:
     def routes(self, problem: RoutingProblem) -> list[dict]:
         """Human readable plan: which path each group takes."""
         out = []
+        # For each crowd, look at its route choices and keep the ones marked 1 in the plan.
         for gid, idxs in problem.group_options.items():
             chosen = [problem.options[i] for i in idxs if self.bitstring[i]]
             out.append({

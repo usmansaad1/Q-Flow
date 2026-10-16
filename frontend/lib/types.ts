@@ -77,6 +77,8 @@ export interface ProblemSettings {
 }
 
 // Settings for a quantum run: circuit layers, number of repeat measurements (shots), and the noise to simulate.
+// HOW TO READ THIS FILE: each "interface" is a description of a piece of data and its fields.
+// "number | null" means a number or nothing; a "?" after a field name means it may be missing.
 export interface QuantumSettings {
   reps: number;
   shots: number;
@@ -88,11 +90,13 @@ export interface QuantumSettings {
 
 // The scorecard for one plan: total score, penalties, whether it obeys every rule, and how full each route is.
 export interface Evaluation {
+  // The total score (lower is better), the score without the penalty, the penalty, and whether the plan obeys the rules.
   energy: number;
   objective: number;
   penalty: number;
   feasible: boolean;
   components: { distance: number; time: number; congestion: number; overflow: number };
+  // People on each route and exit, and how full each is (1 means exactly full).
   resource_loads: Record<string, number>;
   utilisation: Record<string, number>;
   capacity_violations: number;
@@ -123,6 +127,7 @@ export interface QuantumMetrics {
 // The answer from one solver (a method that searches for the best plan), with its score and run time.
 // The "extra" part holds quantum details such as circuit size, noise and timing.
 export interface SolverResultDTO {
+  // Which solver, its outcome, the plan as 0s and 1s, and how long it took.
   solver: string;
   status: string;
   bitstring: number[];
@@ -154,6 +159,7 @@ export interface ProblemSummary {
 
 // How close a result came to the best possible plan, plus the same figures for random guessing.
 export interface Quality {
+  // The best possible score, this answer's grade from 0 to 1, and whether it is the best plan.
   optimal_energy: number;
   approximation_ratio: number;
   is_optimal: boolean;
@@ -204,6 +210,7 @@ export interface RunRow {
   noise_level: number | null;
   reps: number | null;
   shots: number | null;
+  // The quality measures: chance of the best plan, chance of a valid plan, average grade, and so on.
   prob_optimal: number | null;
   prob_feasible: number | null;
   mean_approx_ratio: number | null;

@@ -77,6 +77,7 @@ export function Slider({ value, onChange, min, max, step, format }:
 // Disabled buttons fade out and show a "not allowed" pointer.
 export function Button({ variant = "secondary", className = "", ...props }:
   React.ComponentProps<"button"> & { variant?: "primary" | "secondary" | "danger" | "destructive" | "ghost" | "green" }) {
+  // The colours for each style; the chosen one is added to the button's look below.
   const styles = {
     primary: "bg-ink text-white hover:bg-ink/90 border-ink",
     destructive: "bg-wine text-white hover:bg-wine/90 border-wine",

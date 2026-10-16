@@ -47,6 +47,7 @@ class HardwareUnavailable(RuntimeError):
 # Signs in to IBM Quantum using the secret key and account ID kept in the settings.
 # Gives a clear message if those are missing or the sign in fails.
 def service():
+    # Read the key and account ID from the settings (backend/.env). They are never in the code.
     token, crn = os.environ.get("QFLOW_IBM_TOKEN"), os.environ.get("QFLOW_IBM_CRN")
     if not token or not crn:
         raise HardwareUnavailable(
@@ -123,12 +124,17 @@ def _sampler_run(backend, isa, shots: int):
 # The receipt is saved so the result can be collected once IBM has finished.
 def submit(problem: RoutingProblem, reps: int = 2, shots: int = 4096,
            device: str | None = None, seed: int = 7) -> dict:
+    # Step 1: sign in and pick the machine.
     svc = service()
     b = _backend(svc, problem.num_qubits, device)
+    # Step 2: train the dials on this computer, using the perfect simulator.
     trained = optimise_parameters(problem, reps)
+    # Step 3: build the program, translate it for the chosen chip, and fill in the trained dials.
     logical, params = build_qaoa_circuit(problem, reps, measure=True)
     isa = _transpile(logical, b, seed).assign_parameters(dict(zip(params, trained["theta"])))
+    # Step 4: send it to IBM. This returns at once; IBM runs it later, after the queue.
     job = _sampler_run(b, isa, shots)
+    # Step 5: the receipt. Everything needed to mark the result later is kept here.
     return {
         "job_id": job.job_id(), "backend": b.name, "reps": reps, "shots": shots, "seed": seed,
         "theta": [float(x) for x in trained["theta"]],
@@ -141,9 +147,11 @@ def submit(problem: RoutingProblem, reps: int = 2, shots: int = 4096,
 
 # Checks on a sent job: is it queued, running or done, and where is it in the line?
 def job_status(job_id: str) -> dict:
+    # Look the job up by its ID and read its status word, such as QUEUED, RUNNING or DONE.
     job = service().job(job_id)
     s = job.status()
     name = getattr(s, "name", str(s)).upper()
+    # Only a waiting job has a place in the queue; IBM may also decline to say.
     position = None
     if name in ("QUEUED", "INITIALIZING", "VALIDATING"):
         try:
@@ -197,6 +205,7 @@ def job_result(problem: RoutingProblem, job_id: str, meta: dict, reference: Solv
 def _queue_seconds(job, meta: dict, usage: float) -> tuple[float | None, str]:
     """Seconds the job waited in IBM's queue. IBM's own timestamps when available,
     otherwise an estimate from the time between submission and now."""
+    # First choice: IBM's own record of when the job was created and when it started running.
     try:
         ts = job.metrics().get("timestamps") or {}
         created, running = ts.get("created"), ts.get("running")
@@ -206,6 +215,7 @@ def _queue_seconds(job, meta: dict, usage: float) -> tuple[float | None, str]:
             return max(0.0, wait), "ibm"
     except Exception:
         pass
+    # Fallback: time since we sent it, minus the time the chip was busy. Marked as an estimate.
     submitted = meta.get("submitted_at")
     if submitted is None:
         return None, "unknown"

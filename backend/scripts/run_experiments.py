@@ -34,6 +34,7 @@ def out_dir(exp_id: int, kind: str) -> Path:
 
 # Reads the command line options, then lists, exports again, or runs the chosen experiments.
 def main():
+    # The options you can type after the command.
     ap = argparse.ArgumentParser(description="Q-Flow experiment runner")
     ap.add_argument("experiments", nargs="*", default=["all"],
                     help=f"any of: {', '.join(RUNNERS)}, all (default)")

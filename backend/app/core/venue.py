@@ -52,7 +52,8 @@ class Route:
     bidirectional: bool = True
     id: Optional[str] = None
 
-    # Gives the route a name built from its two ends when none was supplied, e.g. "Hall|Lobby".
+    # Gives the route an id built from its two ends, "From|To", for example "Hall|Lobby".
+    # The website never sends an id, so in practice every route gets its id this way.
     def __post_init__(self):
         if self.id is None:
             self.id = f"{self.from_node}|{self.to_node}"

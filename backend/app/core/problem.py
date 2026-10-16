@@ -62,10 +62,14 @@ class Weights:
 # Each Option becomes one qubit (the basic memory unit of a quantum computer) or one switch.
 @dataclass
 class Option:
+    # Its position in the full list of choices, which is also its qubit number.
     index: int
+    # A readable label such as "x_Balcony_1" (crowd Balcony, its route number 1).
     name: str
+    # Which crowd this choice belongs to, and how many people are in it.
     group_id: str
     group_size: int
+    # The escape route itself, from venue.py.
     path: PathOption
 
     # The walkways and exit door this choice would use.
@@ -279,6 +283,7 @@ class RoutingProblem:
         w = asdict(self.weights)
 
         # Step 1: add the four parts together, each multiplied by its weight.
+        # "lin" holds the cost of each single choice; "quad" holds the extra cost of each pair.
         lin: dict[int, float] = defaultdict(float)
         quad: dict[tuple[int, int], float] = defaultdict(float)
         for name, (l, q) in self.components.items():
@@ -337,8 +342,11 @@ class RoutingProblem:
         n = self.num_variables
         if n > max_qubits:
             raise ValueError(f"{n} variables is too many for full enumeration.")
+        # Step 1: number every possible plan 0, 1, 2, ... and spell each number out as 1s and 0s.
+        # For example with 3 choices, plan number 5 is 1, 0, 1 (choices 0 and 2 picked).
         ks = np.arange(2 ** n, dtype=np.int64)
         X = ((ks[:, None] >> np.arange(n)) & 1).astype(np.float64)
+        # Step 2: score all plans in one go using the table of numbers from qubo_matrix.
         Q, off = self.qubo_matrix()
         return np.einsum("ki,ij,kj->k", X, Q, X) + off
 
@@ -449,13 +457,17 @@ class RoutingProblem:
         when two separate gates are overloaded by different people. This small linear
         programme answers the question exactly in both cases.
         """
+        # Step 1: find the walkways and exits that are over capacity. If none, nobody is over.
         overloaded = [rid for rid, load in loads.items() if load > self.resources[rid].capacity]
         if not overloaded:
             return 0
+        # Step 2: set up the question "remove as few people as possible from the chosen routes
+        # so that every overloaded spot fits". Each overloaded spot gives one limit.
         chosen = [a for a in range(self.num_variables) if x[a]]
         # Variable r_a = people removed from chosen option a, between 0 and its group size.
         A_ub = [[-1.0 if a in self.resource_users[rid] else 0.0 for a in chosen] for rid in overloaded]
         b_ub = [self.resources[rid].capacity - loads[rid] for rid in overloaded]
+        # Step 3: let SciPy's solver answer it, then round up to whole people.
         res = linprog(c=np.ones(len(chosen)), A_ub=A_ub, b_ub=b_ub,
                       bounds=[(0, self.options[a].group_size) for a in chosen], method="highs")
         if not res.success:  # cannot happen (removing everyone always works), but never hide overflow

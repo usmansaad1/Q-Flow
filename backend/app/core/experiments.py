@@ -153,9 +153,11 @@ def make_record(exp_id: int, instance: str, problem: RoutingProblem, method: str
 # then gives the average and spread of each quality figure for every group.
 def summarise(runs: list[dict], x_key: str) -> list[dict]:
     """Mean and population standard deviation per (x value, method)."""
+    # Step 1: sort the runs into piles, one per (thing varied, method).
     groups: dict[tuple, list[dict]] = defaultdict(list)
     for r in runs:
         groups[(r[x_key], r["method"])].append(r)
+    # Step 2: for each pile, the average and spread of each quality figure.
     out = []
     for (x, method), rs in sorted(groups.items(), key=lambda kv: (str(kv[0][1]), _sortable(kv[0][0]))):
         row = {x_key: x, "method": method, "n": len(rs)}
@@ -178,12 +180,16 @@ def _sortable(v):
 # Runs the quantum method twice on one venue, once perfect and once with noise,
 # using the same tuned settings, then saves both results and prints a short line.
 def _quantum_pair(store, exp_id, label, problem, reference, reps, shots, noise_level, log, trained=None):
+    # Train the dials once (unless already trained) so both runs use the same settings.
     trained = trained or optimise_parameters(problem, reps)
+    # The perfect simulator run, saved with noise level 0.
     ideal = solve_qaoa_ideal(problem, reps=reps, shots=shots, trained=trained, reference=reference)
     store.add_run(make_record(exp_id, label, problem, "QAOA ideal", ideal, reference, 0.0))
+    # The same program with realistic errors, saved with its noise level.
     noisy = solve_qaoa_noisy(problem, noise="depolarizing", noise_level=noise_level, reps=reps, shots=shots,
                              trained=trained, reference=reference)
     store.add_run(make_record(exp_id, label, problem, f"QAOA noisy x{noise_level:g}", noisy, reference, noise_level))
+    # One short progress line: the chance of the best plan, perfect versus noisy.
     log(f"  {label:<26} ideal P(opt)={ideal.extra['metrics']['prob_optimal']:.3f}  "
         f"noisy P(opt)={noisy.extra['metrics']['prob_optimal']:.3f}")
 
@@ -196,12 +202,16 @@ def run_scaling(store: Storage, exp_id: int, cfg: ScalingConfig, log: Progress) 
             raise ValueError("Scaling sizes must be even (2 qubits per crowd group).")
         log(f"{size} qubits")
         for i in range(cfg.instances):
+            # A random venue; the seed makes it the same every time this experiment runs.
+            # Half the size in crowds, because each crowd has 2 route choices (2 qubits).
             venue = generate_venue(size // 2, seed=1000 * size + i)
             problem = RoutingProblem(venue, paths_per_group=2)
+            # The exact answer is both a result and the answer key for marking the others.
             reference = solve_exact(problem)
             store.add_run(make_record(exp_id, venue.name, problem, "Classical exact", reference, reference))
             store.add_run(make_record(exp_id, venue.name, problem, "Classical CP SAT", solve_cpsat(problem), reference))
             _quantum_pair(store, exp_id, venue.name, problem, reference, cfg.reps, cfg.shots, cfg.noise_level, log)
+    # Averages per size and method, saved as the experiment's summary.
     return summarise(store.get_runs(exp_id), "num_qubits")
 
 
@@ -211,13 +221,16 @@ def run_noise(store: Storage, exp_id: int, cfg: NoiseConfig, log: Progress) -> l
     for pid in cfg.presets:
         problem = RoutingProblem(get_preset(pid))
         reference = solve_exact(problem)
+        # Train once per venue; every noise level below reuses these settings.
         trained = optimise_parameters(problem, cfg.reps)
         log(f"{problem.venue.name} ({problem.num_qubits} qubits)")
+        # The adjustable error dial, from noise free upwards.
         for level in cfg.levels:
             r = solve_qaoa_noisy(problem, noise="depolarizing", noise_level=level, reps=cfg.reps,
                                  shots=cfg.shots, trained=trained, reference=reference)
             store.add_run(make_record(exp_id, problem.venue.name, problem, "Depolarising", r, reference, level))
             log(f"  depolarising x{level:<5g} mean AR={r.extra['metrics']['mean_approx_ratio']:.3f}")
+        # Copies of real IBM machines, with their measured errors and wiring.
         for fb in cfg.fake_backends:
             r = solve_qaoa_noisy(problem, noise="fake_backend", fake_backend=fb, reps=cfg.reps,
                                  shots=cfg.shots, trained=trained, reference=reference)
@@ -232,6 +245,7 @@ def run_depth(store: Storage, exp_id: int, cfg: DepthConfig, log: Progress) -> l
         problem = RoutingProblem(get_preset(pid))
         reference = solve_exact(problem)
         log(f"{problem.venue.name} ({problem.num_qubits} qubits)")
+        # One perfect and one noisy run at each depth (number of layers).
         for reps in cfg.reps_list:
             log(f" p = {reps}")
             _quantum_pair(store, exp_id, problem.venue.name, problem, reference,
@@ -247,11 +261,14 @@ def run_versus(store: Storage, exp_id: int, cfg: VersusConfig, log: Progress) ->
         name = problem.venue.name
         log(f"{name} ({problem.num_qubits} qubits)")
         reference = solve_exact(problem)
+        # The classical side: nearest exit rule, exact search and CP SAT.
         store.add_run(make_record(exp_id, name, problem, "Naive (nearest exit)", solve_naive(problem), reference))
         store.add_run(make_record(exp_id, name, problem, "Classical exact", reference, reference))
         store.add_run(make_record(exp_id, name, problem, "Classical CP SAT", solve_cpsat(problem), reference))
+        # The quantum side: perfect and noisy simulators, using one set of trained dials.
         trained = optimise_parameters(problem, cfg.reps)
         _quantum_pair(store, exp_id, name, problem, reference, cfg.reps, cfg.shots, cfg.noise_level, log, trained)
+        # Optionally also a copy of a real IBM machine.
         if cfg.fake_backend:
             r = solve_qaoa_noisy(problem, noise="fake_backend", fake_backend=cfg.fake_backend, reps=cfg.reps,
                                  shots=cfg.shots, trained=trained, reference=reference)
@@ -270,8 +287,10 @@ def run_experiment(kind: str, config=None, store: Storage | None = None, log: Pr
     """Create (or reuse) an experiment row, run it, store the summary. Returns its id."""
     if kind not in RUNNERS:
         raise ValueError(f"Unknown experiment '{kind}'. Options: {', '.join(RUNNERS)}")
+    # Use the default database and the default settings unless others were given.
     store = store or Storage()
     config = config or CONFIGS[kind]()
+    # A new experiment row, unless the website already made one and passed its id.
     if exp_id is None:
         exp_id = store.create_experiment(kind, TITLES[kind], asdict(config))
     log(f"[{TITLES[kind]}] experiment #{exp_id}")

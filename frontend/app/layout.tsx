@@ -1,6 +1,7 @@
 // WHAT THIS FILE IS FOR: the outer frame shared by every page of the Q-Flow website.
 // It loads the fonts and global styles, and puts the site header above each page.
 import type { Metadata } from "next";
+// The IBM Plex fonts in the weights the site uses, the map library's styles, and our own styles.
 import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-sans/500.css";
 import "@fontsource/ibm-plex-sans/600.css";
@@ -21,6 +22,7 @@ export const metadata: Metadata = {
 // Wraps every page: the header goes on top, then the content of whichever page is open.
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
+    // The page skeleton: header first, then {children}, which is the page being visited.
     <html lang="en">
       <body className="min-h-screen">
         <SiteHeader />

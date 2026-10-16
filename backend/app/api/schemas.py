@@ -8,7 +8,8 @@ from pydantic import BaseModel, Field
 
 
 # One place in the venue, such as a room or an exit.
-# It may have a capacity (how many people fit) and a position on the map.
+# It may have a capacity (only used for exits: how many people can leave through it)
+# and a position on the map.
 class LocationIn(BaseModel):
     id: str
     location_type: str
@@ -47,6 +48,8 @@ class VenueIn(BaseModel):
 
 # How much the optimiser should care about each cost: distance, time, crowding and overflow.
 # Overflow means more people on a path than it can hold. No weight may be negative.
+# HOW TO READ THE RULES BELOW: Field(1.0, ge=0) means "the default is 1.0 and it must be
+# greater than or equal to 0". le means "less than or equal to", gt means "greater than".
 class WeightsIn(BaseModel):
     distance: float = Field(1.0, ge=0)
     time: float = Field(0.0, ge=0)

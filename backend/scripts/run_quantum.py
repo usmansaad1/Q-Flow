@@ -24,6 +24,7 @@ from app.core.solvers import solve_exact, solve_qaoa_ideal, solve_qaoa_noisy
 # The table shows the chance of the best plan, the chance of a valid plan, the average
 # quality (AR, approximation ratio), circuit size and time, with random guessing for comparison.
 def main():
+    # The options you can type after the command, each with a default value.
     ap = argparse.ArgumentParser()
     ap.add_argument("--reps", type=int, default=2)
     ap.add_argument("--shots", type=int, default=4096)

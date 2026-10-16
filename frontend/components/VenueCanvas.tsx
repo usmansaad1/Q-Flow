@@ -93,15 +93,18 @@ function centre(n: InternalNode) {
 // With a plan, the line gets busier colours and grows thicker as it fills; the label shows people sent out of its capacity.
 // Without a plan, the label shows the route's capacity, length and any fixed travel time.
 function RouteEdgeView({ id, source, target, data, selected }: EdgeProps<RouteEdge>) {
+  // Step 1: find the centres of the two boxes and the straight line between them.
   const s = useInternalNode(source), t = useInternalNode(target);
   if (!s || !t) return null;
   const a = centre(s), b = centre(t);
   const [path, labelX, labelY] = getStraightPath({ sourceX: a.x, sourceY: a.y, targetX: b.x, targetY: b.y });
+  // Step 2: pick the colour and thickness: grey and thin with no plan, coloured by fullness with one.
   const hasPlan = data?.util != null;
   const color = hasPlan ? loadColor(data!.util) : "#8E9AAB";
   const width = hasPlan ? 2.5 + 6 * Math.min(data!.util!, 1.5) : 2.5;
   return (
     <>
+      {/* A faint purple glow under the line when it is selected, then the line itself */}
       {selected && <BaseEdge id={`${id}-sel`} path={path} style={{ stroke: "#4B3FD1", strokeWidth: width + 6, opacity: 0.25 }} />}
       <BaseEdge id={id} path={path} style={{ stroke: color, strokeWidth: width, strokeLinecap: "round" }} />
       {/* One way routes get two arrowheads along the line, either side of the label, pointing the allowed way */}
@@ -114,6 +117,7 @@ function RouteEdgeView({ id, source, target, data, selected }: EdgeProps<RouteEd
             transform={`translate(${a.x + (b.x - a.x) * f} ${a.y + (b.y - a.y) * f}) rotate(${angle})`} />
         );
       })}
+      {/* The small label in the middle of the line */}
       <EdgeLabelRenderer>
         <div className="nodrag nopan num pointer-events-auto absolute rounded-[2px] border border-line bg-white/95 px-1.5 py-px text-[10.5px] text-ink"
           style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}>
@@ -170,17 +174,20 @@ export default function VenueCanvas({
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         connectionRadius={70}
+        // Editing switches: dragging, linking, selecting and the Delete key only work in the Lab.
         nodesDraggable={editable}
         nodesConnectable={editable}
         elementsSelectable={editable}
         deleteKeyCode={editable ? ["Backspace", "Delete"] : null}
         connectionLineStyle={{ stroke: "#4B3FD1", strokeWidth: 2 }}
+        // Zoom to fit the whole venue when it first appears, with a little margin, and limit zooming.
         fitView
         fitViewOptions={{ padding: 0.18 }}
         minZoom={0.3}
         maxZoom={2}
         proOptions={{ hideAttribution: false }}
       >
+        {/* Light grid lines behind the map, and zoom buttons in the bottom right corner */}
         <Background variant={BackgroundVariant.Lines} gap={28} color="#E4E9EF" />
         <Controls showInteractive={false} position="bottom-right" />
       </ReactFlow>

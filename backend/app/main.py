@@ -48,6 +48,8 @@ app.include_router(hardware_router)
 # Turns a request into a routing problem the solvers can work on.
 # The venue comes either from a ready made preset or from a venue the user drew.
 # Sends back a clear error if the venue is missing or cannot be solved.
+# The numbers in the errors are standard web codes: 404 means not found, 400 means the
+# request is missing something, and 422 means the venue was understood but cannot be solved.
 def build_problem(req: ProblemRequest) -> RoutingProblem:
     if req.preset_id:
         try:
@@ -58,6 +60,7 @@ def build_problem(req: ProblemRequest) -> RoutingProblem:
         venue = Venue.from_dict(req.venue.model_dump())
     else:
         raise HTTPException(400, "Provide either preset_id or venue.")
+    # Build the puzzle with the user's priority weights and number of routes per crowd.
     s = req.settings
     try:
         return RoutingProblem(venue, Weights(**s.weights.model_dump()),
@@ -67,6 +70,9 @@ def build_problem(req: ProblemRequest) -> RoutingProblem:
 
 
 # A simple "are you alive?" check that always answers healthy while the server runs.
+# HOW TO READ THE ADDRESSES BELOW: a line like @app.get("/health") means
+# "when the website asks for this address, run the function underneath".
+# get fetches, post creates or runs something, put replaces and delete removes.
 @app.get("/health")
 def health():
     return {"status": "healthy", "service": "q-flow-backend"}
@@ -176,6 +182,7 @@ def optimize(req: OptimizeRequest):
     problem = build_problem(req)
     if req.solver == "ibm_hardware":
         raise HTTPException(400, "IBM hardware runs are background jobs. Use /api/v1/hardware/jobs instead.")
+    # Pick the solver by name. The quantum ones also get the user's quantum settings.
     q = req.quantum
     try:
         if req.solver == "qaoa_ideal":
@@ -286,11 +293,14 @@ def list_experiments():
 @app.post("/api/v1/experiments", status_code=202)
 def start_experiment(req: ExperimentRequest, background: BackgroundTasks):
     """Starts an experiment in the background. Poll GET /api/v1/experiments/{id} for status."""
+    # Start from the quick settings if asked, then apply any single settings the request changes.
     base = dc_asdict(quick_config(req.kind)) if req.quick else {}
     try:
         config = CONFIGS[req.kind](**{**base, **req.config})
     except TypeError as e:
         raise HTTPException(422, f"Invalid config for '{req.kind}': {e}")
+    # Record the experiment now and run it in the background, so the website gets an answer at once
+    # and can keep checking on progress.
     exp_id = get_store().create_experiment(req.kind, TITLES[req.kind], dc_asdict(config))
     background.add_task(_execute, req.kind, config, exp_id)
     return {"id": exp_id, "status": "running"}
