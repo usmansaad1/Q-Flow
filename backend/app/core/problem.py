@@ -90,19 +90,19 @@ class Resource:
 # one route per group rule, how full each walkway and exit is, and how many people do not fit.
 @dataclass
 class Evaluation:
-    energy: float                     # full QUBO value (objective + penalty)
-    objective: float                  # weighted objective without penalty
-    penalty: float
-    feasible: bool
-    components: dict[str, float]      # weighted contributions
-    resource_loads: dict[str, int]
-    utilisation: dict[str, float]
-    capacity_violations: int          # resources over capacity
-    people_over_capacity: int         # fewest people to remove so every route and exit fits
-    total_excess: int                 # excess summed over every route and exit (counts people repeatedly)
-    max_utilisation: float
-    total_person_distance: float      # raw person metres
-    assignment: dict[str, int | None] # group -> chosen option index within group (None if invalid)
+    energy: float                 # the full score, penalty included (lower is better)
+    objective: float              # the score without the penalty
+    penalty: float                # how much was added for breaking the rule
+    feasible: bool                # True if every crowd has exactly one route
+    components: dict              # each of the four parts, after weighting
+    resource_loads: dict          # people on each route and exit
+    utilisation: dict             # how full each one is (1.0 = exactly full)
+    capacity_violations: int      # how many routes and exits are over capacity
+    people_over_capacity: int     # fewest people to remove so everything fits
+    total_excess: int             # excess added up over every spot (counts people twice)
+    max_utilisation: float        # the fullest route or exit
+    total_person_distance: float  # people × metres walked, added up
+    assignment: dict              # which route number each crowd picked (None if invalid)
 
     # Converts the report card into plain data so it can be sent to the website.
     def to_dict(self) -> dict:
